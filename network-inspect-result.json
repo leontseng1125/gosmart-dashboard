@@ -1,0 +1,17 @@
+[
+  {
+    "url": "https://apps.apple.com/api/apps/v1/editorial/tw/collections/1842456901/contents?platform=web&extend%5Beditorial-items%5D=editorialArtwork&extend%5Beditorial-pages%5D=editorialArtwork&sparseLimit%5Bcard-contents%5D=0&previewPlatform=iphone&l=zh-Hant-TW",
+    "status": 200,
+    "requestHeaders": {
+      "sec-ch-ua-platform": "\"macOS\"",
+      "authorization": "Bearer",
+      "referer": "https://apps.apple.com/",
+      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "sec-ch-ua": "\"Not=A?Brand\";v=\"99\", \"HeadlessChrome\";v=\"151\", \"Chromium\";v=\"151\"",
+      "x-apple-client-version": "2634.0.0-external",
+      "sec-ch-ua-mobile": "?0"
+    },
+    "contentType": "application/json;charset=utf-8",
+    "bodySnippet": "{\"data\":[{\"id\":\"6753950852\",\"type\":\"editorial-pages\",\"href\":\"/v1/editorial/tw/editorial-pages/6753950852?l=zh-Hant-TW\",\"attributes\":{\"editorialArtwork\":{\"brandLogo\":{\"bgColor\":\"000000\",\"height\":1080,\"textColor1\":\"f2f2f2\",\"textColor2\":\"e5e5e5\",\"textColor3\":\"c1c1c1\",\"textColor4\":\"b7b7b7\",\"url\":\"https://is1-ssl.mzstatic.com/image/thumb/Features211/v4/78/61/b9/7861b9d5-8999-25f6-303d-08bf6112f2ce/f26de0fd-1ba0-4cbf-8c76-33fb0fbfeb16.png/{w}x{h}{c}.{f}\",\"width\":1080}},\"editorialNotes\":{\"badge\":\"\",\"callToAction\":\"查看\",\"name\":\"類別\"},\"name\":\"APPS_NO_EXTERNAL_NAME\"}},{\"id\":\"1706913785\",\"type\":\"editorial-items\",\"href\":\"/v1/editorial/tw/editorial-items/1706913785?l=zh-Hant-TW\",\"attributes\":{\"cardDisplayStyle\":\"SearchCategoryBrick\",\"displayStyle\":\"Content\",\"editorialArtwork\":{\"brandLogo\":{\"bgColor\":\"000000\",\"height\":1080,\"textColor1\":\"f2f2f2\",\"textColor2\":\"e5e5e5\",\"textColor3\":\"c1c1c1\",\"textColor4\":\"b7b7b7\",\"url\":\"https://is1-ssl.mzstatic.com/image/thumb/Features221/v4/dc/5c/56/dc5c5645-7397-d0f8-b36f-ad91054fdb93/c31e44f2-1f97-4f5a-8629-16eaa60cbd5f.png/{w}x{h}{c}.{f}\",\"width\":1080},\"categoryDetailStatic16x9\":{\"bgColor\":\"e4b25b\",\"height\":2160,\"textColor1\":\"1e1c1b\",\"textColor2\":\"2b2c31\",\"textColor3\":\"463a28\",\"textColor4\":\"504639\",\"url\":\"https://is1-ssl.mzstatic.com/image/thumb/Features221/v4/4e/6b/55/4e6b55af-cd0d-9827-1c58-9dc140ad00bd/7ba6c85b-188a-4ccb-97f2-dd1f4f0905ee.png/{w}x{h}{c}.{f}\",\"width\":3840},\"contentGraphicTrimmed\":{\"bgColor\":\"57575e\",\"height\":3766,\"textColor1\":\"ededf6\",\"textColor2\":\"f0e5fa\",\"textColor3\":\"cfcfd8\",\"textColor4\":\"d1c9db\",\"url\":\"https://is1-ssl.mzstatic.com/image/thumb/Features116/v4/51/46/e7/5146e735-1a6e-b902-4b07-1e14dc86c0a0/3408d0d4-ab8e-4aff-bff5-51e2299e0a64.png/{w}x{h}{c}.{f}\",\"width\":4320},\"contentIconTrimmed\":{\"bgColor\":\"575b60\",\"height\":1080,\"textColor1\":\"f6f6f7\",\"textColor2\":\"eeeeef\",\"textColor3\":\"d6d7d8\",\"textColor4\":\"d0d1d2\",\"url\":\"https://is1-ssl.mzstatic.com/image/thumb/Features116/v4/76/ce/a1/76cea185-6996-9e28-d9c6-500319f2ab7d/a35bed"
+  }
+]

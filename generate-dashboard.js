@@ -4,6 +4,13 @@ const path = require('path');
 const DATA_DIR = path.join(__dirname, 'data');
 const OUT_FILE = path.join(__dirname, 'dashboard.html');
 const FULL_HISTORY_FILE = path.join(DATA_DIR, 'android-full-history.json');
+const MANUAL_REVIEWS_FILE = path.join(DATA_DIR, 'manual-coded-reviews.json');
+
+function loadManualReviews() {
+  if (!fs.existsSync(MANUAL_REVIEWS_FILE)) return [];
+  const raw = JSON.parse(fs.readFileSync(MANUAL_REVIEWS_FILE, 'utf-8'));
+  return raw.reviews || [];
+}
 
 function loadDailyRuns() {
   if (!fs.existsSync(DATA_DIR)) {
@@ -38,12 +45,33 @@ function parseIosScore(ratingLabel) {
 }
 
 function parseIosDate(dateStr) {
-  // App Store 頁面上的日期格式通常是 MM/DD/YYYY
+  // App Store 頁面上的日期格式，實測過至少有三種樣式，都要能解析：
+  // 1. YYYY/MM/DD  例如 2021/12/31（台灣商店較舊的評論常見這種）
+  // 2. MM/DD/YYYY  例如 08/18/2026（美國商店測試時看到的格式）
+  // 3. M月D日      例如 4月27日（台灣商店近期評論常省略年份，代表「今年」）
   if (!dateStr) return null;
-  const m = String(dateStr).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (!m) return null;
-  const [, month, day, year] = m;
-  return new Date(Number(year), Number(month) - 1, Number(day));
+  const trimmed = String(dateStr).trim();
+
+  let m = trimmed.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (m) {
+    const [, year, month, day] = m;
+    return new Date(Number(year), Number(month) - 1, Number(day));
+  }
+
+  m = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) {
+    const [, month, day, year] = m;
+    return new Date(Number(year), Number(month) - 1, Number(day));
+  }
+
+  m = trimmed.match(/^(\d{1,2})月(\d{1,2})日$/);
+  if (m) {
+    const [, month, day] = m;
+    const year = new Date().getFullYear(); // 沒有年份 → 視為報表產出當下的年份
+    return new Date(year, Number(month) - 1, Number(day));
+  }
+
+  return null;
 }
 
 function monthKey(date) {
@@ -87,9 +115,8 @@ function categorizeText(text) {
 }
 
 function sentimentFromScore(score) {
-  if (score === null) return 'neutral';
-  if (score <= 2) return 'negative';
-  if (score === 3) return 'neutral';
+  if (score === null) return 'negative';
+  if (score <= 3) return 'negative'; // 3星以下都算負評
   return 'positive';
 }
 
@@ -125,7 +152,7 @@ function categoryToStage(category) {
   return '帳號與其他';
 }
 
-function buildDataset(dailyRuns, fullHistory) {
+function buildDataset(dailyRuns, fullHistory, manualReviews) {
   const androidSeen = new Map();
 
   fullHistory.forEach((r) => {
@@ -253,6 +280,46 @@ function buildDataset(dailyRuns, fullHistory) {
     (a, b) => a.timestamp - b.timestamp
   );
 
+  // ===== 手動編碼補充資料（例如研究論文的評論編碼表）=====
+  // 這些評論通常沒有精確日期，因此：
+  // - 有解析出日期的：正常參與時間相關統計（月趨勢圖、今年/本月/本週篩選）
+  // - 沒有日期的：timestamp 設為 0，這樣「今年/本月/本週」篩選會自動排除它們（時間戳記太舊，
+  //   不會 >= 篩選門檻），但「全部」範圍、回饋洞察、評論清單仍會包含它們；
+  //   月份設為 null，月趨勢圖（散佈圖）會明確跳過，不會被誤判成落在第一個月份。
+  const manualFlat = manualReviews.map((r, idx) => {
+    const text = r.text || '';
+    const categories = categorizeText(text);
+    let timestamp = 0;
+    let dateLabel = '- 手動截圖';
+    let month = null;
+    if (r.date) {
+      const d = new Date(r.date);
+      if (!isNaN(d)) {
+        timestamp = d.getTime();
+        dateLabel = d.toISOString().slice(0, 10) + '（約，手動補充）';
+        month = monthKey(d);
+      }
+    }
+    return {
+      key: `manual:${r.id || idx}`,
+      platform: r.platform,
+      score: r.score,
+      date: dateLabel,
+      timestamp,
+      month,
+      text,
+      title: r.title || null,
+      userName: null,
+      version: null,
+      sentiment: sentimentFromScore(r.score),
+      categories,
+      stages: [...new Set(categories.map(categoryToStage))],
+      intent: classifyIntent(text, r.score),
+    };
+  });
+
+  const allReviewsFlatWithManual = [...allReviewsFlat, ...manualFlat];
+
   // ===== 情緒 × 類別 統計（關鍵字比對版本），並加總分數供「頻率×嚴重度矩陣」使用 =====
   function computeCategoryStats(reviews) {
     const stats = {};
@@ -280,12 +347,12 @@ function buildDataset(dailyRuns, fullHistory) {
   weekStartDate.setHours(0, 0, 0, 0);
   const weekStart = weekStartDate.getTime();
 
-  const categoryStats = computeCategoryStats(allReviewsFlat); // 全部期間（沿用給矩陣圖等既有用途）
+  const categoryStats = computeCategoryStats(allReviewsFlatWithManual); // 全部期間（含手動補充資料）
   const reviewsByRange = {
-    all: allReviewsFlat,
-    year: allReviewsFlat.filter((r) => r.timestamp >= yearStart),
-    month: allReviewsFlat.filter((r) => r.timestamp >= monthStart),
-    week: allReviewsFlat.filter((r) => r.timestamp >= weekStart),
+    all: allReviewsFlatWithManual,
+    year: allReviewsFlatWithManual.filter((r) => r.timestamp >= yearStart),
+    month: allReviewsFlatWithManual.filter((r) => r.timestamp >= monthStart),
+    week: allReviewsFlatWithManual.filter((r) => r.timestamp >= weekStart),
   };
   const categoryStatsByRange = {
     all: categoryStats,
@@ -316,7 +383,7 @@ function buildDataset(dailyRuns, fullHistory) {
     reviews.forEach((r) => { stats[r.intent] = (stats[r.intent] || 0) + 1; });
     return stats;
   }
-  const intentStats = computeIntentStats(allReviewsFlat);
+  const intentStats = computeIntentStats(allReviewsFlatWithManual);
   const intentStatsByRange = {
     all: intentStats,
     year: computeIntentStats(reviewsByRange.year),
@@ -337,7 +404,7 @@ function buildDataset(dailyRuns, fullHistory) {
     });
     return stats;
   }
-  const stageStats = computeStageStats(allReviewsFlat);
+  const stageStats = computeStageStats(allReviewsFlatWithManual);
   const stageStatsByRange = {
     all: stageStats,
     year: computeStageStats(reviewsByRange.year),
@@ -364,7 +431,7 @@ function buildDataset(dailyRuns, fullHistory) {
     }))
     .sort((a, b) => a.latestTimestamp - b.latestTimestamp);
 
-  const otherCount = allReviewsFlat.filter((r) => r.categories.includes(OTHER_CATEGORY)).length;
+  const otherCount = allReviewsFlatWithManual.filter((r) => r.categories.includes(OTHER_CATEGORY)).length;
 
   const overallRange = () => {
     if (allReviewsFlat.length === 0) return { earliest: '-', latest: '-' };
@@ -387,7 +454,7 @@ function buildDataset(dailyRuns, fullHistory) {
     iosAvgOverall: allIos.filter((r) => r.score !== null).length
       ? allIos.reduce((a, b) => a + (b.score || 0), 0) / allIos.filter((r) => r.score !== null).length
       : null,
-    allReviewsFlat,
+    allReviewsFlat: allReviewsFlatWithManual,
     reviewsByRange,
     categoryOrder: CATEGORY_ORDER,
     categoryStats,
@@ -587,6 +654,28 @@ function renderHtml(dataset) {
     border-radius: 8px;
     font-family: inherit;
   }
+  .status-select {
+    min-width: 88px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .search-input-inline {
+    background: #0f1115;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 12px;
+    padding: 7px 12px;
+    border-radius: 8px;
+    font-family: inherit;
+    box-sizing: border-box;
+    width: 140px;
+  }
+  .search-input-inline::placeholder { color: var(--muted); }
+  .search-input-inline:focus {
+    outline: none;
+    border-color: #7c9fff;
+  }
 
   .chart-container { position: relative; width: 100%; height: 280px; }
   .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -614,6 +703,7 @@ function renderHtml(dataset) {
     .scatter-nav .note { width: 100%; order: 3; }
     #btnResetZoom { margin-left: 0 !important; }
     .select-input { width: 100%; }
+    .search-input-inline { width: 100%; }
     th, td { padding: 8px 6px; font-size: 12px; }
   }
 
@@ -749,20 +839,21 @@ function renderHtml(dataset) {
       <div class="chart-container">
         <canvas id="commentScatterChart" height="110"></canvas>
       </div>
-      <div class="note">用上方按鈕控制縮放程度（近3個月／近6個月／近1年／全部，滑鼠滾輪或觸控板手勢也可以縮放）；按住滑鼠左右拖曳（或觸控板左右滑動）來移動檢視區間，查看更早或更晚的資料。</div>
+      <div class="note">用上方按鈕控制縮放程度（近3個月／近6個月／近1年／全部）；按住滑鼠左右拖曳（或觸控板左右滑動）來移動檢視區間，查看更早或更晚的資料。</div>
     </div>
 
     <div class="chart-card">
       <div class="list-header">
         <h2 style="margin:0">評論清單</h2>
-        <div style="display:flex; gap:8px;">
+        <div style="display:flex; gap:8px; align-items:center;">
+          <input type="text" id="reviewSearchInput" class="search-input-inline" placeholder="搜尋關鍵字...">
           <div class="toggle-group" id="platformToggleGroup">
             <button class="toggle-btn active" data-platform="all">全部</button>
             <button class="toggle-btn" data-platform="android">Android</button>
             <button class="toggle-btn" data-platform="ios">iOS</button>
           </div>
           <div class="toggle-group">
-            <button class="toggle-btn active" id="btnShowNegative">近期負評（2星以下）</button>
+            <button class="toggle-btn active" id="btnShowNegative">近期負評（3星以下）</button>
             <button class="toggle-btn" id="btnShowAll">所有評價</button>
           </div>
         </div>
@@ -770,12 +861,13 @@ function renderHtml(dataset) {
       <div class="table-wrap">
       <table>
         <thead>
-          <tr><th>平台</th><th>日期</th><th>星等</th><th>內容</th></tr>
+          <tr><th>平台</th><th>日期</th><th>星等</th><th>內容</th><th>處理進度</th></tr>
         </thead>
         <tbody id="reviewTableBody"></tbody>
       </table>
       </div>
       <div class="note" id="reviewListNote"></div>
+      <button class="nav-btn" id="btnLoadMoreReviews" style="margin-top:10px;">載入更多評論</button>
     </div>
   </div>
 
@@ -818,7 +910,7 @@ function renderHtml(dataset) {
       <div class="chart-container">
         <canvas id="categoryChart" height="100"></canvas>
       </div>
-      <div class="note">分類依你提供的分類架構建立（定車相關／取車相關／還車相關／客服／審核／付款／站點與車輛數／停權／基本資料／系統／車輛設備／優惠碼/優惠券／帳號／車損拍照／通知／軟體更新／icon設計／投保／搜尋／更改密碼／共同承租人），皆未符合則歸入「其他」。情緒判斷以星等為代理指標（1-2星負面、3星中性、4-5星正面）。上方按鈕可切換統計的時間範圍（全部/今年/本月/本週）；點擊長條圖任一區塊，或用下方篩選器，可查看該分類/情緒的實際評論。</div>
+      <div class="note">分類依你提供的分類架構建立（定車相關／取車相關／還車相關／客服／審核／付款／站點與車輛數／停權／基本資料／系統／車輛設備／優惠碼/優惠券／帳號／車損拍照／通知／軟體更新／icon設計／投保／搜尋／更改密碼／共同承租人），皆未符合則歸入「其他」。情緒判斷以星等為代理指標（1-3星負面、4-5星正面）。上方按鈕可切換統計的時間範圍（全部/今年/本月/本週）；點擊長條圖任一區塊，或用下方篩選器，可查看該分類/情緒的實際評論。</div>
       <div class="note" id="otherCategoryNote" style="color:#ffb84d;"></div>
     </div>
 
@@ -880,7 +972,6 @@ function renderHtml(dataset) {
           <div class="toggle-group" id="sentimentToggleGroup">
             <button class="toggle-btn active" data-sentiment="all">全部</button>
             <button class="toggle-btn" data-sentiment="positive">正面</button>
-            <button class="toggle-btn" data-sentiment="neutral">中性</button>
             <button class="toggle-btn" data-sentiment="negative">負面</button>
           </div>
         </div>
@@ -931,7 +1022,7 @@ function renderHtml(dataset) {
         '<div class="drawer-review-meta">' +
           '<span class="badge ' + r.platform + '">' + platformLabel + '</span>' +
           '<span>' + r.date + '</span>' +
-          '<span class="' + (r.score <= 2 ? 'score-neg' : 'score-pos') + '">' + r.score + ' ★</span>' +
+          '<span class="' + (r.score <= 3 ? 'score-neg' : 'score-pos') + '">' + r.score + ' ★</span>' +
           (r.version ? '<span>版本 ' + r.version + '</span>' : '') +
         '</div>' +
         (r.title ? '<div class="drawer-review-text"><b>' + r.title + '</b></div>' : '') +
@@ -981,18 +1072,66 @@ function renderHtml(dataset) {
 
     const summaryEl = document.getElementById('summaryCards');
     const cards = [
-      { label: 'Google Play 累積評論數', value: dataset.androidTotal, cls: 'android' },
-      { label: 'Google Play 平均星等', value: dataset.androidAvgOverall ? dataset.androidAvgOverall.toFixed(2) : '-', cls: 'android' },
-      { label: 'Google Play 新評論數', value: dataset.newReviewsCount.android, cls: 'new-count' },
-      { label: 'App Store 累積評論數', value: dataset.iosTotal, cls: 'ios' },
-      { label: 'App Store 平均星等', value: dataset.iosAvgOverall ? dataset.iosAvgOverall.toFixed(2) : '-', cls: 'ios' },
-      { label: 'App Store 新評論數', value: dataset.newReviewsCount.ios, cls: 'new-count' },
+      { label: 'Google Play 累積評論數', value: dataset.androidTotal, cls: 'android', decimals: 0 },
+      { label: 'Google Play 平均星等', value: dataset.androidAvgOverall, cls: 'android', decimals: 2 },
+      { label: 'Google Play 新評論數', value: dataset.newReviewsCount.android, cls: 'new-count', decimals: 0 },
+      { label: 'App Store 累積評論數', value: dataset.iosTotal, cls: 'ios', decimals: 0 },
+      { label: 'App Store 平均星等', value: dataset.iosAvgOverall, cls: 'ios', decimals: 2 },
+      { label: 'App Store 新評論數', value: dataset.newReviewsCount.ios, cls: 'new-count', decimals: 0 },
     ];
     summaryEl.innerHTML = cards.map(c => {
       const isZeroNewCount = c.cls === 'new-count' && c.value === 0;
       const style = isZeroNewCount ? ' style="opacity:0.2"' : '';
-      return '<div class="card"><div class="label">' + c.label + '</div><div class="value ' + c.cls + '"' + style + '>' + c.value + '</div></div>';
+      // 沒有有效數值時（例如尚無評分資料），直接顯示 "-"，不套用計數動畫
+      if (c.value === null || c.value === undefined || isNaN(c.value)) {
+        return '<div class="card"><div class="label">' + c.label + '</div><div class="value ' + c.cls + '"' + style + '>-</div></div>';
+      }
+      const initialText = c.decimals > 0 ? (0).toFixed(c.decimals) : '0';
+      return '<div class="card"><div class="label">' + c.label + '</div>' +
+        '<div class="value ' + c.cls + '"' + style + ' data-count-target="' + c.value + '" data-count-decimals="' + c.decimals + '">' + initialText + '</div></div>';
     }).join('');
+
+    // ===== 頂部卡片數字：滾動進入畫面時，從 0 跑到目標值（只觸發一次） =====
+    function animateCountUp(el, target, decimals, duration) {
+      const startTime = performance.now();
+      function frame(now) {
+        const elapsed = now - startTime;
+        const t = Math.min(elapsed / duration, 1);
+        const eased = 1 - Math.pow(1 - t, 3); // ease-out（前快後慢）
+        const current = target * eased;
+        el.textContent = decimals > 0 ? current.toFixed(decimals) : Math.round(current).toLocaleString();
+        if (t < 1) {
+          requestAnimationFrame(frame);
+        } else {
+          el.textContent = decimals > 0 ? target.toFixed(decimals) : target.toLocaleString();
+        }
+      }
+      requestAnimationFrame(frame);
+    }
+
+    const countTargets = summaryEl.querySelectorAll('[data-count-target]');
+    if (countTargets.length > 0 && 'IntersectionObserver' in window) {
+      const countObserver = new IntersectionObserver((entries, observer) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            countTargets.forEach(el => {
+              const target = parseFloat(el.dataset.countTarget);
+              const decimals = parseInt(el.dataset.countDecimals, 10) || 0;
+              animateCountUp(el, target, decimals, 1600);
+            });
+            observer.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.3 });
+      countObserver.observe(summaryEl);
+    } else {
+      // 瀏覽器不支援 IntersectionObserver 時，直接顯示最終數值，不做動畫
+      countTargets.forEach(el => {
+        const target = parseFloat(el.dataset.countTarget);
+        const decimals = parseInt(el.dataset.countDecimals, 10) || 0;
+        el.textContent = decimals > 0 ? target.toFixed(decimals) : target.toLocaleString();
+      });
+    }
 
     // ===== Tab 切換 =====
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1021,12 +1160,6 @@ function renderHtml(dataset) {
             data: dataset.categoryOrder.map(c => dataset.categoryStatsByRange.all[c].positive),
             backgroundColor: '#3ddc84',
             sentimentKey: 'positive',
-          },
-          {
-            label: '中性',
-            data: dataset.categoryOrder.map(c => dataset.categoryStatsByRange.all[c].neutral),
-            backgroundColor: '#5b6272',
-            sentimentKey: 'neutral',
           },
           {
             label: '負面',
@@ -1071,15 +1204,14 @@ function renderHtml(dataset) {
         activeCategoryRange = range;
         const stats = dataset.categoryStatsByRange[range];
         categoryChartInstance.data.datasets[0].data = dataset.categoryOrder.map(c => stats[c].positive);
-        categoryChartInstance.data.datasets[1].data = dataset.categoryOrder.map(c => stats[c].neutral);
-        categoryChartInstance.data.datasets[2].data = dataset.categoryOrder.map(c => stats[c].negative);
+        categoryChartInstance.data.datasets[1].data = dataset.categoryOrder.map(c => stats[c].negative);
         categoryChartInstance.update();
       });
     });
 
     // ===== 情緒分析 tab：頻率 × 嚴重度矩陣 =====
     function matrixPointColor(avgScore) {
-      return avgScore <= 2.5 ? '#ff6b6b' : (avgScore >= 4 ? '#3ddc84' : '#e8c15c');
+      return avgScore <= 3 ? '#ff6b6b' : '#3ddc84';
     }
 
     const matrixChartInstance = new Chart(document.getElementById('matrixChart'), {
@@ -1186,7 +1318,6 @@ function renderHtml(dataset) {
         labels: dataset.stageOrder,
         datasets: [
           { label: '正面', data: dataset.stageOrder.map(s => dataset.stageStatsByRange.all[s].positive), backgroundColor: '#3ddc84', sentimentKey: 'positive' },
-          { label: '中性', data: dataset.stageOrder.map(s => dataset.stageStatsByRange.all[s].neutral), backgroundColor: '#5b6272', sentimentKey: 'neutral' },
           { label: '負面', data: dataset.stageOrder.map(s => dataset.stageStatsByRange.all[s].negative), backgroundColor: '#ff6b6b', sentimentKey: 'negative' },
         ],
       },
@@ -1217,8 +1348,7 @@ function renderHtml(dataset) {
         activeStageRange = btn.dataset.timeRange;
         const stats = dataset.stageStatsByRange[activeStageRange];
         stageChartInstance.data.datasets[0].data = dataset.stageOrder.map(s => stats[s].positive);
-        stageChartInstance.data.datasets[1].data = dataset.stageOrder.map(s => stats[s].neutral);
-        stageChartInstance.data.datasets[2].data = dataset.stageOrder.map(s => stats[s].negative);
+        stageChartInstance.data.datasets[1].data = dataset.stageOrder.map(s => stats[s].negative);
         stageChartInstance.update();
       });
     });
@@ -1316,7 +1446,7 @@ function renderHtml(dataset) {
           <tr>
             <td><span class="badge \${r.platform}">\${r.platform === 'android' ? 'Android' : 'iOS'}</span></td>
             <td>\${r.date}</td>
-            <td class="\${r.score <= 2 ? 'score-neg' : 'score-pos'}">\${r.score} ★</td>
+            <td class="\${r.score <= 3 ? 'score-neg' : 'score-pos'}">\${r.score} ★</td>
             <td>
               \${r.title ? '<div class="review-text"><b>' + r.title + '</b></div>' : ''}
               <div class="review-text">\${(r.text || '').slice(0, 200)}</div>
@@ -1345,6 +1475,8 @@ function renderHtml(dataset) {
 
     function buildScatterPoints(platform, minIndex, maxIndex) {
       const list = dataset.allReviewsFlat.filter(r => {
+        if (r.month === null || r.month === undefined) return false; // 沒有日期的手動補充資料不畫進時間軸圖表
+        if (!monthKeys.includes(r.month)) return false; // 日期落在目前資料範圍之外（例如手動補充資料早於爬蟲涵蓋期間），同樣跳過避免誤判成第一個月
         const idx = monthToIndex(r.month);
         return r.platform === platform && idx >= minIndex && idx <= maxIndex;
       });
@@ -1471,8 +1603,8 @@ function renderHtml(dataset) {
             zoom: {
               pan: { enabled: true, mode: 'x' },
               zoom: {
-                wheel: { enabled: true },
-                pinch: { enabled: true },
+                wheel: { enabled: false },
+                pinch: { enabled: false },
                 mode: 'x',
               },
               limits: {
@@ -1503,14 +1635,52 @@ function renderHtml(dataset) {
     currentWindowStart = Math.max(0, monthKeys.length - currentWindowSize);
     renderScatterChart(); // 預設顯示近 6 個月
 
-    // ===== 評論 tab：清單（負評 / 全部 切換 + 平台篩選） =====
+    // ===== 評論 tab：清單（負評 / 全部 切換 + 平台篩選 + 分頁載入 + 處理進度標籤） =====
     const tbody = document.getElementById('reviewTableBody');
     const noteEl = document.getElementById('reviewListNote');
     const btnNegative = document.getElementById('btnShowNegative');
     const btnAll = document.getElementById('btnShowAll');
+    const searchInput = document.getElementById('reviewSearchInput');
+    const btnLoadMore = document.getElementById('btnLoadMoreReviews');
 
     let currentReviewMode = 'negative';
     let currentPlatform = 'all';
+    let visibleCount = 30;
+    const PAGE_SIZE = 30;
+
+    // ===== 處理進度標籤：存在瀏覽器的 localStorage 裡（只存在這台電腦/這個瀏覽器，不會同步給其他人） =====
+    const STATUS_OPTIONS = ['尚未處理', '處理中', '已解決', '已回報', '不處理'];
+    const STATUS_COLORS = {
+      '尚未處理': { bg: '#3a3d45', text: '#e8e9ed' },
+      '處理中': { bg: '#4a3d1f', text: '#ffc966' },
+      '已解決': { bg: '#1f4a34', text: '#4ade8f' },
+      '已回報': { bg: '#2a3a52', text: '#7fb0ff' },
+      '不處理': { bg: '#2a2e38', text: '#7a7f8a' },
+    };
+    const STATUS_STORAGE_PREFIX = 'gosmart-review-status:';
+
+    function applyStatusColor(selectEl, value) {
+      const c = STATUS_COLORS[value] || STATUS_COLORS[STATUS_OPTIONS[0]];
+      selectEl.style.backgroundColor = c.bg;
+      selectEl.style.color = c.text;
+      selectEl.style.borderColor = c.bg;
+    }
+
+    function getReviewStatus(key) {
+      try {
+        return localStorage.getItem(STATUS_STORAGE_PREFIX + key) || STATUS_OPTIONS[0];
+      } catch (e) {
+        return STATUS_OPTIONS[0];
+      }
+    }
+
+    function setReviewStatus(key, value) {
+      try {
+        localStorage.setItem(STATUS_STORAGE_PREFIX + key, value);
+      } catch (e) {
+        // 瀏覽器不支援或被封鎖時，靜默失敗即可，不影響其他功能
+      }
+    }
 
     function renderReviewTable() {
       let sortedDesc = [...dataset.allReviewsFlat].sort((a, b) => b.timestamp - a.timestamp);
@@ -1519,47 +1689,97 @@ function renderHtml(dataset) {
         sortedDesc = sortedDesc.filter(r => r.platform === currentPlatform);
       }
 
-      let list;
-      let note;
       const platformLabel = currentPlatform === 'all' ? '' : (currentPlatform === 'android' ? '（僅 Android）' : '（僅 iOS）');
+
       if (currentReviewMode === 'negative') {
-        list = sortedDesc.filter(r => r.score <= 2).slice(0, 30);
-        note = '顯示最近 30 則 2 星以下的評論' + platformLabel + '。';
+        sortedDesc = sortedDesc.filter(r => r.score <= 3);
+      }
+
+      const keyword = searchInput.value.trim().toLowerCase();
+      if (keyword) {
+        sortedDesc = sortedDesc.filter(r => {
+          const haystack = ((r.title || '') + ' ' + (r.text || '') + ' ' + (r.userName || '')).toLowerCase();
+          return haystack.includes(keyword);
+        });
+      }
+
+      const total = sortedDesc.length;
+      const list = sortedDesc.slice(0, visibleCount);
+
+      let note;
+      if (keyword) {
+        note = '搜尋「' + searchInput.value.trim() + '」，符合 ' + total + ' 則' + platformLabel + '，目前顯示 ' + list.length + ' 則。';
+      } else if (currentReviewMode === 'negative') {
+        note = '3 星以下的評論' + platformLabel + '，共 ' + total + ' 則，目前顯示 ' + list.length + ' 則。';
       } else {
-        list = sortedDesc.slice(0, 100);
-        note = '顯示最近 100 則評論' + platformLabel + '（依日期排序）。';
+        note = '所有評價' + platformLabel + '，共 ' + total + ' 則，目前顯示 ' + list.length + ' 則。';
       }
 
       if (list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="color:#9aa0ac">目前沒有符合條件的評論</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="color:#9aa0ac">目前沒有符合條件的評論</td></tr>';
       } else {
         tbody.innerHTML = list.map(r => \`
           <tr>
             <td><span class="badge \${r.platform}">\${r.platform === 'android' ? 'Android' : 'iOS'}</span></td>
             <td>\${r.date}</td>
-            <td class="\${r.score <= 2 ? 'score-neg' : 'score-pos'}">\${r.score} ★</td>
+            <td class="\${r.score <= 3 ? 'score-neg' : 'score-pos'}">\${r.score} ★</td>
             <td>
               \${r.title ? '<div class="review-text"><b>' + r.title + '</b></div>' : ''}
               <div class="review-text">\${(r.text || '').slice(0, 200)}</div>
               <div class="review-meta">\${r.userName || ''}</div>
             </td>
+            <td>
+              <select class="select-input status-select" data-review-key="\${r.key}">
+                \${STATUS_OPTIONS.map(opt => '<option value="' + opt + '"' + (getReviewStatus(r.key) === opt ? ' selected' : '') + '>' + opt + '</option>').join('')}
+              </select>
+            </td>
           </tr>
         \`).join('');
       }
       noteEl.textContent = note;
+
+      // 依目前選擇的狀態套用對應顏色（每次重建 tbody 後都要重新套用一次）
+      tbody.querySelectorAll('.status-select').forEach(sel => {
+        applyStatusColor(sel, sel.value);
+      });
+
+      if (visibleCount >= total) {
+        btnLoadMore.style.display = 'none';
+      } else {
+        btnLoadMore.style.display = '';
+        btnLoadMore.textContent = '載入更多評論（還有 ' + (total - visibleCount) + ' 則）';
+      }
     }
+
+    function resetPaginationAndRender() {
+      visibleCount = PAGE_SIZE;
+      renderReviewTable();
+    }
+
+    // 用事件委派監聽狀態下拉選單的變更，因為每次 render 都會整個重建 tbody 內容
+    tbody.addEventListener('change', (e) => {
+      if (e.target.classList.contains('status-select')) {
+        setReviewStatus(e.target.dataset.reviewKey, e.target.value);
+        applyStatusColor(e.target, e.target.value);
+      }
+    });
+
+    btnLoadMore.addEventListener('click', () => {
+      visibleCount += PAGE_SIZE;
+      renderReviewTable();
+    });
 
     btnNegative.addEventListener('click', () => {
       btnNegative.classList.add('active');
       btnAll.classList.remove('active');
       currentReviewMode = 'negative';
-      renderReviewTable();
+      resetPaginationAndRender();
     });
     btnAll.addEventListener('click', () => {
       btnAll.classList.add('active');
       btnNegative.classList.remove('active');
       currentReviewMode = 'all';
-      renderReviewTable();
+      resetPaginationAndRender();
     });
 
     document.querySelectorAll('#platformToggleGroup .toggle-btn').forEach(btn => {
@@ -1567,9 +1787,11 @@ function renderHtml(dataset) {
         document.querySelectorAll('#platformToggleGroup .toggle-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         currentPlatform = btn.dataset.platform;
-        renderReviewTable();
+        resetPaginationAndRender();
       });
     });
+
+    searchInput.addEventListener('input', resetPaginationAndRender);
 
     renderReviewTable();
 
@@ -1655,13 +1877,14 @@ function saveSnapshot(keys) {
 function main() {
   const dailyRuns = loadDailyRuns();
   const fullHistory = loadFullHistory();
+  const manualReviews = loadManualReviews();
 
-  if (dailyRuns.length === 0 && fullHistory.length === 0) {
+  if (dailyRuns.length === 0 && fullHistory.length === 0 && manualReviews.length === 0) {
     console.error('沒有任何資料可以產生報表，請先跑過 scheduled-scrape.js 或 android-full-history.js。');
     process.exit(1);
   }
 
-  const dataset = buildDataset(dailyRuns, fullHistory);
+  const dataset = buildDataset(dailyRuns, fullHistory, manualReviews);
 
   // ===== 跟上一次產出報表時的快照比對，找出這次新增的評論 =====
   const previousKeys = loadPreviousSnapshot();
