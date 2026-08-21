@@ -1,0 +1,13 @@
+{
+  "name": "review-scraper-demo",
+  "version": "1.0.0",
+  "description": "Demo: fetch App Store & Google Play reviews",
+  "main": "demo.js",
+  "scripts": {
+    "start": "node demo.js"
+  },
+  "dependencies": {
+    "app-store-scraper": "^0.18.0",
+    "google-play-scraper": "^9.2.0"
+  }
+}
