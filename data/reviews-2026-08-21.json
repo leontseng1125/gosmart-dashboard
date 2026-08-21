@@ -1,6 +1,22 @@
 {
-  "scraped_at": "2026-08-21T08:14:53.536Z",
+  "scraped_at": "2026-08-21T18:29:42.919Z",
   "android": [
+    {
+      "id": "7f778d90-df0a-4024-a7b1-89bf3877e940",
+      "userName": "宜容李",
+      "userImage": "https://play-lh.googleusercontent.com/a/ACg8ocK8IXsWteynv9FyQEXEPleIHXxcSJZJh1u5nq2GID2FK3Yi=mo",
+      "date": "2026-08-20T18:11:44.218Z",
+      "score": 1,
+      "scoreText": "1",
+      "url": "https://play.google.com/store/apps/details?id=com.carplus.goSmart&reviewId=7f778d90-df0a-4024-a7b1-89bf3877e940",
+      "title": null,
+      "text": "廣告太久，佔用時間 爛",
+      "replyDate": null,
+      "replyText": null,
+      "version": "4.15.0",
+      "thumbsUp": 0,
+      "criterias": []
+    },
     {
       "id": "403e6fe4-e36c-4dc1-a372-a6a41e4333d2",
       "userName": "周軒逸",
@@ -784,22 +800,6 @@
       "version": "4.1.2",
       "thumbsUp": 3,
       "criterias": []
-    },
-    {
-      "id": "c3e656d0-d896-433c-a6f6-39cfe50e7d2f",
-      "userName": "張曉縵今日特餐50元全國各地抓鎖張曉縵",
-      "userImage": "https://play-lh.googleusercontent.com/a-/ALV-UjUiRO9z5u2xlp26AD3UfKIWPO556MKf82Sem25_pzSOz0gck_0",
-      "date": "2026-02-24T04:12:17.670Z",
-      "score": 5,
-      "scoreText": "5",
-      "url": "https://play.google.com/store/apps/details?id=com.carplus.goSmart&reviewId=c3e656d0-d896-433c-a6f6-39cfe50e7d2f",
-      "title": null,
-      "text": "更新版本破產",
-      "replyDate": null,
-      "replyText": null,
-      "version": null,
-      "thumbsUp": 0,
-      "criterias": []
     }
   ],
   "ios": [
@@ -826,6 +826,42 @@
       "date": "2024/10/13",
       "rating": "4 顆星",
       "body": "唯一缺點是預授權的金額對於只有租借一兩個小時來說真的過高，且因為刷退還會因為銀行退款時間不同，導致就是有一筆錢被扣在那邊很擾人"
+    },
+    {
+      "title": "喜歡格上的車款",
+      "date": "2025/08/02",
+      "rating": "3 顆星",
+      "body": "駕駛後座的車門必須要調整，從裡面無法開啟，煞車皮是否太緊或怎樣，有奇的聲音。七月份曾經租用過這輛車，並沒有這些狀況，未來還會租用格上的車，希望會有改善。"
+    },
+    {
+      "title": "雨刷",
+      "date": "5月25日",
+      "rating": "5 顆星",
+      "body": "整體使用上都很好，很棒但是雨刷部分就是刷不乾淨，上面都會殘留雨水希望你們可以更新為了其他使用者的安全👍"
+    },
+    {
+      "title": "通知訊息",
+      "date": "2024/02/26",
+      "rating": "5 顆星",
+      "body": "通知訊息一直無法更新，小紅點也就一直亮在那邊，請趕快修正。"
+    },
+    {
+      "title": "拍照流程待改進",
+      "date": "2025/09/29",
+      "rating": "4 顆星",
+      "body": "只能使用程式的拍照功能進行拍照，而無法選取手機相簿，對於某些不好拍照的角度，沒有0.5倍的縮放功能，很難拍到完整的車尾或車頭，希望可以改進"
+    },
+    {
+      "title": "客服",
+      "date": "2025/08/22",
+      "rating": "1 顆星",
+      "body": "客服態度、素質、解決事情能力歸還車輛時扣款銀行卡片臨時出問題無法馬上完成付款 馬上打給客服反應這個問題、客服回覆：你先去跟親朋好友借信用卡、凌晨一點多我臨時也找不到人幫忙、我說我車已經開到還車定點了、卡片出問題要等隔日銀行上班才能處理好、客服回覆：那就會以逾時歸還費用繼續累積到付款完成為止  、"
+    },
+    {
+      "title": "一顆星給你們都多了！",
+      "date": "2024/10/27",
+      "rating": "1 顆星",
+      "body": "自己系統有問題，我都還車操作完成了，之後看到還車失敗不是帳款問題，預收我也只是用了兩個多小時就還車了，他們還要退我錢，結果不認帳，留言給客服打去客服他們也都說會再回撥一直拖兩天才聯絡我，是他們在拖時間憑什麼要我付那些錢，也沒詢問他們遠端還車會產生這麼多費用，還要我付工本費6000，加逾時租金，還威脅我要通知法務，趕快去吧，自己的系統有問題還要客人買單？"
     }
   ]
 }

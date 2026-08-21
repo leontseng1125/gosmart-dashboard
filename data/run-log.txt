@@ -1,2 +1,3 @@
 [2026-08-21T07:58:11.087Z] 開始排程抓取 | Google Play: 抓到 50 則 | App Store: 抓到 4 則 | 已存檔: /Users/leon.tseng/Desktop/review-scraper-demo/data/reviews-2026-08-21.json
 [2026-08-21T08:14:46.773Z] 開始排程抓取 | Google Play: 抓到 50 則 | App Store: 抓到 4 則 | 已存檔: /Users/leon.tseng/Desktop/review-scraper-demo/data/reviews-2026-08-21.json
+[2026-08-21T18:29:34.065Z] 開始排程抓取 | Google Play: 抓到 50 則 | App Store: 抓到 10 則 | 已存檔: /Users/yi_kai/Desktop/gosmart-dashboard-main/data/reviews-2026-08-21.json
