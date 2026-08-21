@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <title>格上 GoSmart 評論追蹤 Dashboard</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
 <style>
   :root {
     --bg: #0f1115;
@@ -94,8 +95,8 @@
   }
   .badge.android { background: rgba(61,220,132,0.15); color: var(--android); }
   .badge.ios { background: rgba(124,159,255,0.15); color: var(--ios); }
-  .score-neg { color: var(--neg); font-weight: 600; }
-  .score-pos { color: var(--text); font-weight: 600; }
+  .score-neg { color: var(--neg); font-weight: 600; white-space: nowrap; }
+  .score-pos { color: var(--text); font-weight: 600; white-space: nowrap; }
   .review-text { color: var(--text); }
   .review-meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
   .note { color: var(--muted); font-size: 12px; margin-top: 8px; }
@@ -126,6 +127,36 @@
     background: #2a2e38;
     color: var(--text);
   }
+  .scatter-nav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .nav-btn {
+    background: #2a2e38;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    white-space: nowrap;
+  }
+  .nav-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .select-input {
+    background: #0f1115;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 12px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    font-family: inherit;
+  }
 
   /* Chart.js tooltip 客製外觀由 canvas 內部繪製處理，此區塊為 fallback（若瀏覽器不支援 external tooltip 就不需要） */
 </style>
@@ -139,6 +170,7 @@
   <div class="tabs">
     <button class="tab-btn active" data-tab="comments">評論</button>
     <button class="tab-btn" data-tab="ratings">評分</button>
+    <button class="tab-btn" data-tab="sentiment">情緒分析</button>
   </div>
 
   <div class="tab-panel active" id="tab-comments">
@@ -152,16 +184,29 @@
           <button class="toggle-btn" data-range="all">全部</button>
         </div>
       </div>
+      <div class="scatter-nav">
+        <button class="nav-btn" id="btnPrevWindow">◀ 上一區間</button>
+        <span class="note" id="scatterRangeNote" style="margin:0"></span>
+        <button class="nav-btn" id="btnNextWindow">下一區間 ▶</button>
+        <button class="toggle-btn" id="btnResetZoom" style="margin-left:auto">重置縮放</button>
+      </div>
       <canvas id="commentScatterChart" height="110"></canvas>
-      <div class="note" id="scatterRangeNote"></div>
+      <div class="note">滑鼠滾輪可縮放；用「上一區間／下一區間」按鈕可明確地往前或往後移動查看不同時間段（比拖曳手勢更穩定可靠）。</div>
     </div>
 
     <div class="chart-card">
       <div class="list-header">
         <h2 style="margin:0">評論清單</h2>
-        <div class="toggle-group">
-          <button class="toggle-btn active" id="btnShowNegative">近期負評（2星以下）</button>
-          <button class="toggle-btn" id="btnShowAll">所有評價</button>
+        <div style="display:flex; gap:8px;">
+          <div class="toggle-group" id="platformToggleGroup">
+            <button class="toggle-btn active" data-platform="all">全部</button>
+            <button class="toggle-btn" data-platform="android">Android</button>
+            <button class="toggle-btn" data-platform="ios">iOS</button>
+          </div>
+          <div class="toggle-group">
+            <button class="toggle-btn active" id="btnShowNegative">近期負評（2星以下）</button>
+            <button class="toggle-btn" id="btnShowAll">所有評價</button>
+          </div>
         </div>
       </div>
       <table>
@@ -193,8 +238,44 @@
     </div>
   </div>
 
+  <div class="tab-panel" id="tab-sentiment">
+    <div class="chart-card">
+      <h2>情緒與類別分析（依關鍵字比對，可能一則評論同時符合多個類別）</h2>
+      <canvas id="categoryChart" height="100"></canvas>
+      <div class="note">分類依你提供的分類架構建立（定車相關／取車相關／還車相關／客服／審核／付款／站點與車輛數／停權／基本資料／系統／車輛設備／優惠碼/優惠券／帳號／車損拍照／通知／軟體更新／icon設計／投保／搜尋／更改密碼／共同承租人），皆未符合則歸入「其他」。情緒判斷以星等為代理指標（1-2星負面、3星中性、4-5星正面）。點擊長條圖任一區塊，或用下方篩選器，可查看該分類/情緒的實際評論。</div>
+    </div>
+
+    <div class="chart-card">
+      <div class="list-header">
+        <h2 style="margin:0">分類細節檢視</h2>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <select id="categorySelect" class="select-input"></select>
+          <div class="toggle-group" id="sentimentToggleGroup">
+            <button class="toggle-btn active" data-sentiment="all">全部</button>
+            <button class="toggle-btn" data-sentiment="positive">正面</button>
+            <button class="toggle-btn" data-sentiment="neutral">中性</button>
+            <button class="toggle-btn" data-sentiment="negative">負面</button>
+          </div>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr><th>平台</th><th>日期</th><th>星等</th><th>內容</th></tr>
+        </thead>
+        <tbody id="categoryDetailTableBody"></tbody>
+      </table>
+      <div class="note" id="categoryDetailNote"></div>
+    </div>
+  </div>
+
   <script>
-    const dataset = {"monthKeys":["2022-12","2023-01","2023-02","2023-03","2023-04","2023-05","2023-06","2023-07","2023-08","2023-09","2023-10","2023-11","2023-12","2024-01","2024-02","2024-03","2024-04","2024-05","2024-06","2024-07","2024-08","2024-09","2024-10","2024-11","2024-12","2025-01","2025-02","2025-03","2025-04","2025-05","2025-06","2025-07","2025-08","2025-09","2025-10","2025-11","2025-12","2026-01","2026-02","2026-03","2026-04","2026-05","2026-06","2026-07","2026-08"],"monthlyStats":[{"month":"2022-12","androidAvg":2.142857142857143,"iosAvg":null,"androidCount":7,"iosCount":0},{"month":"2023-01","androidAvg":3.2857142857142856,"iosAvg":null,"androidCount":7,"iosCount":0},{"month":"2023-02","androidAvg":2.3333333333333335,"iosAvg":null,"androidCount":6,"iosCount":0},{"month":"2023-03","androidAvg":2.5,"iosAvg":null,"androidCount":6,"iosCount":0},{"month":"2023-04","androidAvg":1.7777777777777777,"iosAvg":null,"androidCount":9,"iosCount":0},{"month":"2023-05","androidAvg":3.125,"iosAvg":null,"androidCount":8,"iosCount":0},{"month":"2023-06","androidAvg":3.125,"iosAvg":null,"androidCount":8,"iosCount":0},{"month":"2023-07","androidAvg":3.25,"iosAvg":null,"androidCount":8,"iosCount":0},{"month":"2023-08","androidAvg":1.5,"iosAvg":null,"androidCount":2,"iosCount":0},{"month":"2023-09","androidAvg":2.4166666666666665,"iosAvg":null,"androidCount":12,"iosCount":0},{"month":"2023-10","androidAvg":1,"iosAvg":null,"androidCount":3,"iosCount":0},{"month":"2023-11","androidAvg":2.25,"iosAvg":null,"androidCount":4,"iosCount":0},{"month":"2023-12","androidAvg":3.3333333333333335,"iosAvg":null,"androidCount":3,"iosCount":0},{"month":"2024-01","androidAvg":3,"iosAvg":null,"androidCount":4,"iosCount":0},{"month":"2024-02","androidAvg":2,"iosAvg":null,"androidCount":3,"iosCount":0},{"month":"2024-03","androidAvg":1.8,"iosAvg":null,"androidCount":5,"iosCount":0},{"month":"2024-04","androidAvg":3,"iosAvg":null,"androidCount":7,"iosCount":0},{"month":"2024-05","androidAvg":3,"iosAvg":null,"androidCount":2,"iosCount":0},{"month":"2024-06","androidAvg":2.6,"iosAvg":null,"androidCount":5,"iosCount":0},{"month":"2024-07","androidAvg":1,"iosAvg":null,"androidCount":1,"iosCount":0},{"month":"2024-08","androidAvg":1.75,"iosAvg":null,"androidCount":4,"iosCount":0},{"month":"2024-09","androidAvg":5,"iosAvg":null,"androidCount":3,"iosCount":0},{"month":"2024-10","androidAvg":1,"iosAvg":null,"androidCount":2,"iosCount":0},{"month":"2024-11","androidAvg":3.25,"iosAvg":null,"androidCount":4,"iosCount":0},{"month":"2024-12","androidAvg":3.4,"iosAvg":null,"androidCount":5,"iosCount":0},{"month":"2025-01","androidAvg":2.6666666666666665,"iosAvg":null,"androidCount":3,"iosCount":0},{"month":"2025-02","androidAvg":3,"iosAvg":null,"androidCount":2,"iosCount":0},{"month":"2025-03","androidAvg":3,"iosAvg":null,"androidCount":2,"iosCount":0},{"month":"2025-04","androidAvg":1,"iosAvg":null,"androidCount":2,"iosCount":0},{"month":"2025-05","androidAvg":1,"iosAvg":null,"androidCount":2,"iosCount":0},{"month":"2025-06","androidAvg":4.428571428571429,"iosAvg":null,"androidCount":7,"iosCount":0},{"month":"2025-07","androidAvg":4.111111111111111,"iosAvg":null,"androidCount":18,"iosCount":0},{"month":"2025-08","androidAvg":4.2,"iosAvg":null,"androidCount":10,"iosCount":0},{"month":"2025-09","androidAvg":3.5,"iosAvg":null,"androidCount":10,"iosCount":0},{"month":"2025-10","androidAvg":3.375,"iosAvg":null,"androidCount":16,"iosCount":0},{"month":"2025-11","androidAvg":3.5384615384615383,"iosAvg":null,"androidCount":13,"iosCount":0},{"month":"2025-12","androidAvg":3.7777777777777777,"iosAvg":null,"androidCount":9,"iosCount":0},{"month":"2026-01","androidAvg":4.2,"iosAvg":null,"androidCount":10,"iosCount":0},{"month":"2026-02","androidAvg":4.2,"iosAvg":null,"androidCount":20,"iosCount":0},{"month":"2026-03","androidAvg":4.583333333333333,"iosAvg":null,"androidCount":12,"iosCount":0},{"month":"2026-04","androidAvg":4.153846153846154,"iosAvg":null,"androidCount":13,"iosCount":0},{"month":"2026-05","androidAvg":4.2,"iosAvg":null,"androidCount":5,"iosCount":0},{"month":"2026-06","androidAvg":3.4,"iosAvg":null,"androidCount":5,"iosCount":0},{"month":"2026-07","androidAvg":4.125,"iosAvg":null,"androidCount":8,"iosCount":0},{"month":"2026-08","androidAvg":3,"iosAvg":null,"androidCount":5,"iosCount":0}],"androidDist":{"1":93,"2":19,"3":26,"4":23,"5":139},"iosDist":{"1":0,"2":0,"3":0,"4":1,"5":3},"androidTotal":300,"iosTotal":4,"androidAvgOverall":3.32,"iosAvgOverall":4.75,"allReviewsFlat":[{"platform":"android","score":1,"date":"2022-12-17","timestamp":1671261798672,"month":"2022-12","text":"很難用，註冊要一直重複輸入，還要一直重複拍照，審核還一直失敗，弄了3天也弄不好，打給客服也不能解決，只能幫忙紀錄問題，那要怎麼租車？","title":null,"userName":"TSEN RITA"},{"platform":"android","score":4,"date":"2022-12-18","timestamp":1671343817110,"month":"2022-12","text":"好","title":null,"userName":"黄世明"},{"platform":"android","score":1,"date":"2022-12-18","timestamp":1671356598370,"month":"2022-12","text":"一直審核失敗，眼睛是有什麼問題","title":null,"userName":"顏dewinds"},{"platform":"android","score":3,"date":"2022-12-24","timestamp":1671856940973,"month":"2022-12","text":"千萬不要路邊租還，除非你很有把握目的地在還車範圍&&路邊停車格很好找，不然就是個坑","title":null,"userName":"vini su"},{"platform":"android","score":2,"date":"2022-12-28","timestamp":1672256205623,"month":"2022-12","text":"第一次使用，體驗就很差，前一個人停在b3，到了車前，我的手機有網路，但似乎汽車方的內部網路連不上，無法啟動，之後訂單就不見了!!! 也才剛到租車時間兩分鐘，訂單到底成不成立也無法得知，打給客服完全無法打通，都是忙線或是直接說網路系統錯誤修復中，後來就租同停車場的irent了","title":null,"userName":"Leonarka Geo (阿傑)"},{"platform":"android","score":1,"date":"2022-12-29","timestamp":1672306913931,"month":"2022-12","text":"里程加價後 價錢幾乎變2倍 漲太多了 另外找租車公司吧！","title":null,"userName":"l.w lee"},{"platform":"android","score":3,"date":"2022-12-30","timestamp":1672407887139,"month":"2022-12","text":"尚未清潔的車子有優惠折扣，可是為什麼不能同時使用自己的優惠卷？","title":null,"userName":"Wei"},{"platform":"android","score":5,"date":"2023-01-01","timestamp":1672563633484,"month":"2023-01","text":"操作體驗比和運好太多了","title":null,"userName":"Ci Dong"},{"platform":"android","score":5,"date":"2023-01-04","timestamp":1672830988522,"month":"2023-01","text":"同意見","title":null,"userName":"鄭宇超"},{"platform":"android","score":2,"date":"2023-01-05","timestamp":1672906183207,"month":"2023-01","text":"審核一直沒過，不知道哪裡出問題，也沒有客服可以找","title":null,"userName":"mars lin"},{"platform":"android","score":1,"date":"2023-01-05","timestamp":1672916667651,"month":"2023-01","text":"緊急聯絡人電話填錯，按儲存後就無法修改","title":null,"userName":"YunYunYun"},{"platform":"android","score":1,"date":"2023-01-08","timestamp":1673154712907,"month":"2023-01","text":"單就緊急聯絡人電話不能自由修改，導致「共享車」帳戶審核失敗，就知道這間公司的app寫的有多爛！還打電話勒？直接選擇刪除帳號了！爛！","title":null,"userName":"Ryan Kuo"},{"platform":"android","score":5,"date":"2023-01-08","timestamp":1673184563438,"month":"2023-01","text":"租車用app很流暢，價格明細也清楚","title":null,"userName":"陳信昌"},{"platform":"android","score":4,"date":"2023-01-31","timestamp":1675173639893,"month":"2023-01","text":"這輩子還沒租過車,以前聽太多不好租車行案例,但總需一試,今天首次用這app,註冊介面不難,審核速度超快才幾分鐘就通過了,真讚! 現就等待用車體驗囉...先保留一星待後評..","title":null,"userName":"ckd8888"},{"platform":"android","score":5,"date":"2023-01-31","timestamp":1675186753802,"month":"2023-02","text":"做得越來越好了","title":null,"userName":"Spike 張玄昊 (BK)"},{"platform":"android","score":1,"date":"2023-02-06","timestamp":1675685514821,"month":"2023-02","text":"App待改進，本來對格上的印象與各種使用體驗都優於紅色同業，但今天使用a租b還服務體驗非常糟，租車前只能知道a點有車借，b點是簽約可還停車場，但租了車之後要還車才發現b點即時有實際車位可停，但因為格上跟b點停車場簽約的停車格滿了，所以無法還，本以為是b點被格上的車停滿了，但打開app,b場根本沒格上的車可以在租，完全搞不懂為何會有停滿的意思，最後停到3公里外的停車場才行還車。浪費時間浪費錢。 退一步來說，如果租車前我能找到我家這邊停車場是不能還的狀態的，我根本不會租這種a租b還服務，希望你們工程師能改進讓我們租車前就能知道那邊可以還車，再自己考量要不要租，拜託。","title":null,"userName":"hannyih"},{"platform":"android","score":1,"date":"2023-02-11","timestamp":1676097985361,"month":"2023-02","text":"悠遊卡綁定不見了 也沒辦法用悠遊卡開鎖車門","title":null,"userName":"沃馬影像 MLGB Film"},{"platform":"android","score":5,"date":"2023-02-19","timestamp":1676788651279,"month":"2023-02","text":"使用邀請碼 nnuKD 送$300元折價券","title":null,"userName":"廖晟佑"},{"platform":"android","score":1,"date":"2023-02-24","timestamp":1677278386784,"month":"2023-02","text":"租到的車剛上車就發現爆胎了，聯絡客服就叫我自己從app還車另外再租其它車，完全沒有要幫我處理後續問題的意思。連假行程都排好了，車子早就被租完了。","title":null,"userName":"Gary"},{"platform":"android","score":1,"date":"2023-02-28","timestamp":1677562326104,"month":"2023-02","text":"希望臉部數據不會外流 驗證要用app相機自拍照 還有要影片錄轉臉","title":null,"userName":"Yi Wu"},{"platform":"android","score":5,"date":"2023-03-02","timestamp":1677750691560,"month":"2023-03","text":"沒更新，進不了。好吧，更新→結果app就閃退！？請幫幫忙！ 還真湊巧，好險是中午租車即還。晚上一更新，糟了……就app閃退，重開機也一樣 我Asus Zenfone2，Android6.0","title":null,"userName":"宋善解"},{"platform":"android","score":1,"date":"2023-03-17","timestamp":1679015153592,"month":"2023-03","text":"待改進","title":null,"userName":"江秉峰"},{"platform":"android","score":1,"date":"2023-03-20","timestamp":1679284419947,"month":"2023-03","text":"爛 不能還車地點居然也讓客戶正常還車。 然後就變成誤導租車人 要繳交調度費用1640元","title":null,"userName":"莊王政（黑豬）"},{"platform":"android","score":4,"date":"2023-03-20","timestamp":1679314344600,"month":"2023-03","text":"拍證件時，沒有框框，一直都送件失敗，後來用iPhone才解決，希望能更新喔！","title":null,"userName":"Billy Hsia"},{"platform":"android","score":3,"date":"2023-03-22","timestamp":1679450822345,"month":"2023-03","text":"最近付款流程到最後要上傳圖片的時候，傳送速度很慢且容易失敗(確定手機網路沒問題)，然後…之後又整個拍照流程要重新再來一次，導致還車時間只能一延再延，真的很糟糕。","title":null,"userName":"Johnny Chen"},{"platform":"android","score":1,"date":"2023-03-31","timestamp":1680266422000,"month":"2023-03","text":"信用卡被盜刷 安全性堪慮","title":null,"userName":"martin chu"},{"platform":"android","score":2,"date":"2023-04-03","timestamp":1680515369892,"month":"2023-04","text":"4/3更新後 站點歸還 車輛點不到","title":null,"userName":"stevensayhi"},{"platform":"android","score":1,"date":"2023-04-05","timestamp":1680717662169,"month":"2023-04","text":"爛透了，扣款預扣金額就算了，還車前已查看繳款金額，明明可以扣款不足的金額，結果還車是扣總數金額的第二次，讓我還車耗了快半小時，重點刷了第二筆，第一筆還沒退款，客服回應（要7~14天才會退款），那我之前當天退款都是假的嗎？還有，轎車內外裝也髒的要死，還顯示已清潔，下雨天，雨刷也刷不乾淨，是在騙人嗎？","title":null,"userName":"許家銓"},{"platform":"android","score":5,"date":"2023-04-08","timestamp":1680921346858,"month":"2023-04","text":"租了幾次，車況好，借還方便，臨時有狀況，客服也能即時聯絡上","title":null,"userName":"鮮奶紅茶"},{"platform":"android","score":1,"date":"2023-04-08","timestamp":1680953203434,"month":"2023-04","text":"緊急聯絡人的電話就一定要手機號碼 然後審核從2022年3月到現在都2023了，過了一年還在審核中是在耍人？ 要申請刪除帳號還顯示有爭議的訂單未結案不給刪帳號是在哈囉什麼，實在太扯了。 不推薦其他親朋好友使用這爛App","title":null,"userName":"翁士傑"},{"platform":"android","score":1,"date":"2023-04-10","timestamp":1681096738564,"month":"2023-04","text":"不能預訂當天租/當天還","title":null,"userName":"DOWN RUN"},{"platform":"android","score":1,"date":"2023-04-13","timestamp":1681399366968,"month":"2023-04","text":"錄影完全註冊不能用，是在哈囉?","title":null,"userName":"雨雨"},{"platform":"android","score":1,"date":"2023-04-14","timestamp":1681511234197,"month":"2023-04","text":"使用體驗太差勁，爛東西，要租小貨車居然沒選項。","title":null,"userName":"賞寇"},{"platform":"android","score":3,"date":"2023-04-28","timestamp":1682680528340,"month":"2023-04","text":"今天第一次路邊租車就遇到系統出錯，無法辨識還車地點，撥通客服就花了19分鐘，解決系統問題共多花半小時，整體服務只能給個3星(系統不穩扣2分，客服處理很積極滿分)","title":null,"userName":"Chih-Chiao Yang"},{"platform":"android","score":1,"date":"2023-04-30","timestamp":1682825873400,"month":"2023-04","text":"要做共享車審核，上傳自拍影片一直上傳失敗","title":null,"userName":"ricky HSU"},{"platform":"android","score":5,"date":"2023-05-01","timestamp":1682906432687,"month":"2023-05","text":"之前是四年irent重度愛用者，最近因為irent改了太多規則，一堆亂扣分，就 回來使用，發現格上車很新，租車也不會一大堆規定，重點是比irent優惠太多太多了，用生命推薦的好租車","title":null,"userName":"蔡小文"},{"platform":"android","score":1,"date":"2023-05-02","timestamp":1683031895445,"month":"2023-05","text":"超級糟糕，那個認證的自拍影片弄了很久還是上傳失敗。系統不好就算了，就不能有別的認證方式嗎?","title":null,"userName":"diana diana"},{"platform":"android","score":1,"date":"2023-05-02","timestamp":1683037928707,"month":"2023-05","text":"註冊共享汽車上傳影片這關永遠顯示失敗，爛透，到底在優化什麼","title":null,"userName":"邱柏菖"},{"platform":"android","score":5,"date":"2023-05-03","timestamp":1683084019141,"month":"2023-05","text":"非常好","title":null,"userName":"Pohsi L"},{"platform":"android","score":5,"date":"2023-05-06","timestamp":1683375106301,"month":"2023-05","text":"Good","title":null,"userName":"韞翔王"},{"platform":"android","score":2,"date":"2023-05-14","timestamp":1684075259600,"month":"2023-05","text":"格上租車","title":null,"userName":"游春松（喃无地藏金鋼佛如來）"},{"platform":"android","score":1,"date":"2023-05-26","timestamp":1685106008981,"month":"2023-05","text":"先說重點，不要選地下停車場的站點。今天租車就搞了半小時，一直出現異常，客服說因為地下室訊號不良，車機收不到訊號，請我取消再重租，然後我原地重租一台就很正常；之後還車又是困難重重，照片全部拍完右滑還車後跳出請聯絡客服(606)，打第一次要我把App重開再試一次，第二次還車想也知道一定又異常，然後再打一次客服才說幫我遠端還車，照片一樣要拍，今天就拍了一大堆TIIDA照片，搞得像幫自己愛車拍照一樣。客服就打了4通共18分鐘，浪費一小時在租還車","title":null,"userName":"god70541"},{"platform":"android","score":5,"date":"2023-05-30","timestamp":1685470902457,"month":"2023-05","text":"整體體驗極佳，車子很乾淨，APP使用起來也非常順暢快速，付款也方便，在各方面都比irent更好！","title":null,"userName":"chen sean"},{"platform":"android","score":5,"date":"2023-06-01","timestamp":1685648656417,"month":"2023-06","text":"好棒","title":null,"userName":"songchun lee"},{"platform":"android","score":5,"date":"2023-06-04","timestamp":1685842996418,"month":"2023-06","text":"讚讚讚","title":null,"userName":"陳美華"},{"platform":"android","score":3,"date":"2023-06-09","timestamp":1686285929520,"month":"2023-06","text":"請問有開App閃退的解決方法嗎？","title":null,"userName":"雲南光"},{"platform":"android","score":1,"date":"2023-06-12","timestamp":1686586122646,"month":"2023-06","text":"本人姓蔡 從2022/3/11開始加入並承租格上租車的車種至2023/6/12共計1年又3個月對於總消費額度來到165976元這是我一筆一筆的用計算機敲出來的 為何會這樣是因為對於格上租車公司的服務態度跟型態感到非常失望，起初租車是由愛瑞特轉到格上租車的，一開始對於格上的服務態度應變能力感到相當滿意，但是，我覺得是市場占有率提高了，服務品質越來越差對於事件處理令人感到相當不滿憤怒，所以以後不會再繼續使用格上租車任何服務或是商品，對於格上租車這個品牌失去信任，不推薦親朋好友體驗格上租車的服務","title":null,"userName":"小肉鬆"},{"platform":"android","score":4,"date":"2023-06-13","timestamp":1686673760182,"month":"2023-06","text":"整體評價 ok 客服人員也相當有禮貌 不過建議 若有配合地下停車場的 能協調 劃設 格上專用車格 於b1或 （訊號相對佳的地方）靠近天井處 避免 客人 與客服人員操作租還車的不便 謝謝","title":null,"userName":"許晟瑋"},{"platform":"android","score":1,"date":"2023-06-15","timestamp":1686812336834,"month":"2023-06","text":"訊號不好租金算客人的 上次租車格滿位等了快一個小時 也沒補償，也是算客人的 可否請檢討一下客服的應對措施","title":null,"userName":"顥然"},{"platform":"android","score":1,"date":"2023-06-17","timestamp":1687014360460,"month":"2023-06","text":"沒有最扯，只有更扯，你們的客服會打來說停車場有負號是正常的是吧！你們的客服有沒有一種叫“教育訓練”，客服真的待加強，其他的事情就由你們自己體會吧","title":null,"userName":"阿文"},{"platform":"android","score":5,"date":"2023-06-30","timestamp":1688114487670,"month":"2023-06","text":"歡迎輸入我的邀請碼 拿優惠券 kLhd4 第一次租車體驗不錯！而且還是超新的車覺得滿幸運！服務人員態度都很棒！","title":null,"userName":"Yi-Chun Chuang"},{"platform":"android","score":3,"date":"2023-07-01","timestamp":1688244213638,"month":"2023-07","text":"喜歡這個遊戲","title":null,"userName":"洪文幸"},{"platform":"android","score":5,"date":"2023-07-03","timestamp":1688374639473,"month":"2023-07","text":"真好","title":null,"userName":"彭文秀"},{"platform":"android","score":5,"date":"2023-07-05","timestamp":1688594172387,"month":"2023-07","text":"有比較過 格上確實進步很多 有用心","title":null,"userName":"C JIN-A"},{"platform":"android","score":1,"date":"2023-07-08","timestamp":1688829262126,"month":"2023-07","text":"甲租乙環的車 全台卻只能看到1個0空位的站點 要還車也不知道要去哪裡還 打給客服只會叫你去台北 到台北能不能看到還車站點也不知道","title":null,"userName":"Ian Lu"},{"platform":"android","score":5,"date":"2023-07-11","timestamp":1689118641769,"month":"2023-07","text":"對我們這種年紀，價錢公道好用","title":null,"userName":"梁美華"},{"platform":"android","score":5,"date":"2023-07-15","timestamp":1689407436582,"month":"2023-07","text":"台大校友會決束","title":null,"userName":"喬珠"},{"platform":"android","score":1,"date":"2023-07-22","timestamp":1690005770918,"month":"2023-07","text":"共享汽車功能完全無法使用，跟iRent介面比起來，差爆了","title":null,"userName":"Wei P"},{"platform":"android","score":1,"date":"2023-07-28","timestamp":1690555776351,"month":"2023-07","text":"設計不良，整體使用操作真不方便。","title":null,"userName":"venus chen"},{"platform":"android","score":2,"date":"2023-08-06","timestamp":1691314512514,"month":"2023-08","text":"實體門市還是對於老客戶服務好很多，懂得協助客戶需求值得加分。 至於App算了，自動AI認證錯誤還不能自行修正？手動審核客服沒有權限要等兩至三天……。 不然就是系統問題，訊號不穩各種閃退真的很無言。","title":null,"userName":"山野沃客"},{"platform":"android","score":1,"date":"2023-08-08","timestamp":1691466993500,"month":"2023-08","text":"彰化沒得租","title":null,"userName":"蔡佳泰"},{"platform":"android","score":1,"date":"2023-09-01","timestamp":1693561892227,"month":"2023-09","text":"一直補件一直審核不過，我是不曉得你們到底要多高清的照片啦，但是我可以確定這是最後一次送審，如果在不過我也不會使用你們家的慘品了直接刪APP","title":null,"userName":"SW P"},{"platform":"android","score":1,"date":"2023-09-03","timestamp":1693752699610,"month":"2023-09","text":"無法開啟共享租車 無法定位","title":null,"userName":"行人型人"},{"platform":"android","score":1,"date":"2023-09-03","timestamp":1693755620754,"month":"2023-09","text":"爛服務，車又少，註冊還要搞東搞西打電話，跟家人斷絕關係要怎麼聯絡，有事嗎？外面日租都沒那麼麻煩","title":null,"userName":"Tony"},{"platform":"android","score":1,"date":"2023-09-06","timestamp":1693977615406,"month":"2023-09","text":"刻意要求拍照竊取資料","title":null,"userName":"Kfldld Fmm"},{"platform":"android","score":5,"date":"2023-09-11","timestamp":1694392569602,"month":"2023-09","text":"Good","title":null,"userName":"詹鳳娥"},{"platform":"android","score":5,"date":"2023-09-12","timestamp":1694492984974,"month":"2023-09","text":"格上Gosmart的部分一直越來越有感的進步了 想必開始賺錢了吧？ 最近發現站點離多生活圈越來越近，不曉得是不是也會考慮常用使用者的取車地點來擴增取出站點，希望可以直接開在我家樓下或是上班地點旁邊","title":null,"userName":"樹樹Susu"},{"platform":"android","score":3,"date":"2023-09-15","timestamp":1694774486691,"month":"2023-09","text":"希望還車能有個彈性是時間 例如5分鐘？！ 車都停完了上傳內外照，直接超時 orz","title":null,"userName":"阿魂"},{"platform":"android","score":2,"date":"2023-09-16","timestamp":1694851055815,"month":"2023-09","text":"車子後面出風口沒風","title":null,"userName":"ShangEn Wu"},{"platform":"android","score":1,"date":"2023-09-18","timestamp":1695043439856,"month":"2023-09","text":"非常糟糕的app體驗，租車的時候都沒有問題結果要還車的時候不是一直當掉跳出，不然就是上傳太久一直出現錯誤訊息，非常懷疑上架前是否有用各種系統的手機測試過，一次就算了但每次至少都要花半小時以上的時間在車子前面拍一堆照片還還不了車，真的會讓使用者的感覺很糟，至少我已經不打算再使用了🫠","title":null,"userName":"Jim Chen"},{"platform":"android","score":3,"date":"2023-09-20","timestamp":1695228259273,"month":"2023-09","text":"高雄同色區域租還服務怎麼不見了？還蠻方便的說，可惜","title":null,"userName":"Kevin wang"},{"platform":"android","score":2,"date":"2023-09-26","timestamp":1695700136293,"month":"2023-09","text":"09/08預約09/26以及09/28的分享車訂單居然會自動消失！還好有再預約到，不然行程就出問題了！ 你們為什麼不明示預約的限制，要讓客戶發生狀況呢？無法理解。 取車後沒有機制反應車內的缺失狀況，還要打電話到客服反應。","title":null,"userName":"歐芭尚"},{"platform":"android","score":4,"date":"2023-09-29","timestamp":1696031238800,"month":"2023-09","text":"還可以，但車子少，很難找","title":null,"userName":"江峻（XAVIER）"},{"platform":"android","score":1,"date":"2023-10-13","timestamp":1697194784686,"month":"2023-10","text":"打電話給客服，客服人員的態度不是很好，說好的預刷2500元，最後還是被扣款","title":null,"userName":"Jason Pan"},{"platform":"android","score":1,"date":"2023-10-27","timestamp":1698399996848,"month":"2023-10","text":"會用個資向監理所查罰單資料 ， 電話客服態度很差。","title":null,"userName":"張Jacky"},{"platform":"android","score":1,"date":"2023-10-31","timestamp":1698720660340,"month":"2023-10","text":"一直審核不通過，不曉得要多高清圖片，連自拍部分用錄的也不合格@@怪 還是用iRent好了，相對iRent車多據點多","title":null,"userName":"Alpha Lau"},{"platform":"android","score":1,"date":"2023-11-01","timestamp":1698813161778,"month":"2023-11","text":"爛爆 一直補件 人工審核還不會過 這是人的問題","title":null,"userName":"楊凡"},{"platform":"android","score":3,"date":"2023-11-03","timestamp":1698978697590,"month":"2023-11","text":"本人和證件合照的功能無法自動對焦很難用","title":null,"userName":"林官賢Lin Kuan-Hsien"},{"platform":"android","score":4,"date":"2023-11-09","timestamp":1699544659541,"month":"2023-11","text":"很方便。但。可租還的區域還不夠廣泛。希望能再廣泛些。謝謝。","title":null,"userName":"陳怡君"},{"platform":"android","score":1,"date":"2023-11-27","timestamp":1701066670200,"month":"2023-11","text":"不能補開統編，電話跟app 都沒人回","title":null,"userName":"T Terry"},{"platform":"android","score":4,"date":"2023-12-20","timestamp":1703069755414,"month":"2023-12","text":"不曾錯","title":null,"userName":"威儒"},{"platform":"android","score":1,"date":"2023-12-23","timestamp":1703332937211,"month":"2023-12","text":"一天內租到兩次都是電瓶沒電，一上車就收到簡訊說偵測到你的車電瓶電壓不足，那為何還讓使用者租？ 一天還遇到兩次，早上客服打通了，說會把車費歸零再還車。晚上又遇到，是運氣多差，還是品質太差？這次客服打了六七分鐘都打不通，繼續算電話費，繼續等，然後就順便還車。還完了剛好接通了，說已經還車就沒法把車費歸零，已付的錢後續會再聯絡我，就這樣。 所以今天租格上兩次共浪費我一個多小時，加吉時保保費兩單和等超久的電話費，和沒用到車的租金80元，好棒棒。 回報車電瓶沒電後，打開地圖還是看得到那台車喔，只能說下個租客誰租到誰倒楣！","title":null,"userName":"Ethan Lin"},{"platform":"android","score":5,"date":"2023-12-26","timestamp":1703564722418,"month":"2023-12","text":"很好啊！","title":null,"userName":"張建仁"},{"platform":"android","score":1,"date":"2024-01-05","timestamp":1704454633609,"month":"2024-01","text":"非常糟糕的體驗，建議大家去用irent，要不是至少要給一顆星，我一定給他0顆星！！！爛透了","title":null,"userName":"張博淵"},{"platform":"android","score":5,"date":"2024-01-10","timestamp":1704885254957,"month":"2024-01","text":"使用之機會","title":null,"userName":"巫秋賢"},{"platform":"android","score":1,"date":"2024-01-20","timestamp":1705724312851,"month":"2024-01","text":"App不順卡卡，一直轉圈圈，租金也不便宜","title":null,"userName":"Eric"},{"platform":"android","score":5,"date":"2024-01-21","timestamp":1705821611350,"month":"2024-01","text":"很好用又很便宜，但因為跟LINE GO有合作，不用特別載app，就先卸載了 ☺️☺️☺️ 未來會繼續跟格上租車的（路邊租還真的很方便）","title":null,"userName":"陳安雅"},{"platform":"android","score":4,"date":"2024-02-07","timestamp":1707284209104,"month":"2024-02","text":"簡單好用","title":null,"userName":"Joanne"},{"platform":"android","score":1,"date":"2024-02-14","timestamp":1707889578449,"month":"2024-02","text":"這個軟體很危險，驗證信用卡不通過，卻能盜刷我的卡，大家一起下架這個垃圾軟體，千萬別再上當了","title":null,"userName":"吳冠霖"},{"platform":"android","score":1,"date":"2024-02-18","timestamp":1708234316370,"month":"2024-02","text":"12次租車，有7次要找客服解決車子問題，其中還2次沒電，打去客服還說後台看電池都是正常的，爛到暴。","title":null,"userName":"Felix Lan"},{"platform":"android","score":1,"date":"2024-03-04","timestamp":1709590863619,"month":"2024-03","text":"沒事被說攜帶毒品被停權，有就報警啦，我反應還可以解鎖是怎樣，完全沒邏輯","title":null,"userName":"何何"},{"platform":"android","score":5,"date":"2024-03-08","timestamp":1709918758216,"month":"2024-03","text":"沒有比較沒有傷害😏","title":null,"userName":"lunar Fiend"},{"platform":"android","score":1,"date":"2024-03-12","timestamp":1710258210270,"month":"2024-03","text":"假日不能只租一天","title":null,"userName":"林老師"},{"platform":"android","score":1,"date":"2024-03-13","timestamp":1710335524548,"month":"2024-03","text":"服務員態度極差","title":null,"userName":"林小澀"},{"platform":"android","score":1,"date":"2024-03-20","timestamp":1710933481201,"month":"2024-03","text":"無故停權的垃圾東西","title":null,"userName":"星星"},{"platform":"android","score":5,"date":"2024-04-03","timestamp":1712145626840,"month":"2024-04","text":"已多次租借使用，體驗很好，有需要會再租借車輛。","title":null,"userName":"Tim Lee"},{"platform":"android","score":5,"date":"2024-04-04","timestamp":1712225834211,"month":"2024-04","text":"很棒","title":null,"userName":"陳明德"},{"platform":"android","score":1,"date":"2024-04-05","timestamp":1712293975529,"month":"2024-04","text":"我沒欠你們任何一次錢，訂閱那麼多次了問題一堆規定一直改，第一次是開公司發票要繳一堆證明文件，第二次是要續約跟我說我自己的罰單太多不給續約了，訂閱跟共享還有日租，沒出過車禍沒遲繳什麼錯都沒有，就因為罰單被取消續約資格？我又不是欠你們干你們什麼事，比和運貴就算了要求還那麼多無言，我罰單還只是ETC沒繳跟停車費沒繳被罰的，之前出國回來就忘了繳被罰的也不是重大違規，要不是我提早發現，還車前才發現不然日常交通部分我不就會受到影響了","title":null,"userName":"Manto Nemo"},{"platform":"android","score":1,"date":"2024-04-06","timestamp":1712405017330,"month":"2024-04","text":"1. 你常常會需要電話客服，但假日客服需要等15分鐘以上 2. 同站租還不會保留車位，原停車場滿了，自己要想辦法聯繫客服和找其他車位還車。 3. 客服還會說這種狀況要趕快打進來（就接不通，還說）","title":null,"userName":"Aaro H."},{"platform":"android","score":1,"date":"2024-04-09","timestamp":1712653856561,"month":"2024-04","text":"第一次使用貴公司租車服務！ 有問題跑到門市詢問，服務員一問三不知+打0800客服永遠忙線中+智能客服答非所問+打站所電話沒人接到自動掛斷....... 這樣的體驗，很難會想繼續使用！","title":null,"userName":"JWYS"},{"platform":"android","score":3,"date":"2024-04-13","timestamp":1712978012427,"month":"2024-04","text":"邀請碼：Q5iHT 第一次使用，過後補心得🤧","title":null,"userName":"柳嚴"},{"platform":"android","score":5,"date":"2024-04-15","timestamp":1713198473800,"month":"2024-04","text":"還不錯 便宜好用 就是桃園希望可以多開一點 歡迎輸入邀請碼一起賺300元補貼 Q5NeB","title":null,"userName":"Yeh"},{"platform":"android","score":4,"date":"2024-05-25","timestamp":1716644233442,"month":"2024-05","text":"使用快一年多，都算是蠻順利的，只是有時候明明看到有車，但app上沒顯示，車過很久也沒被租","title":null,"userName":"李昀"},{"platform":"android","score":2,"date":"2024-05-25","timestamp":1716650807622,"month":"2024-05","text":"優惠卷選項設計上不夠直覺，還有付款到數計時 不安好心","title":null,"userName":"林Yu -Fan"},{"platform":"android","score":1,"date":"2024-06-10","timestamp":1718021293349,"month":"2024-06","text":"垃圾app 騙朋友推薦優惠碼 辦完說不能輸入","title":null,"userName":"t6192"},{"platform":"android","score":1,"date":"2024-06-19","timestamp":1718761065791,"month":"2024-06","text":"租車的人要自己注意，租賃車輛竟未辦理，北市停車費自動扣繳，等你後續收到掛號信催繳，雙倍罰款外，家人還要問你，怎麼會去租車...鳥事一堆，不如用iRent","title":null,"userName":"致遠"},{"platform":"android","score":1,"date":"2024-06-20","timestamp":1718867471688,"month":"2024-06","text":"這評分，看來這公司也不太在乎用戶體驗！？ 優惠碼要註冊輸手機的同時輸入，沒印象有這格也沒用，因為你就是沒輸入！那麼多租車的，真的可以先試別家就好！ 這麼簡單的問題，客服能讓我打了四通電話(每次講的都不同)丶接了五通回覆，才讓我知道要快刪掉APP去別家吧！","title":null,"userName":"李小綠"},{"platform":"android","score":5,"date":"2024-06-25","timestamp":1719274770103,"month":"2024-06","text":"謝謝格上提供便利的服務。建議，APP增加以車型作為搜尋條件之一，使用者快速搜尋附近的指定車型，增加更多體驗。","title":null,"userName":"蕭易修"},{"platform":"android","score":5,"date":"2024-06-26","timestamp":1719426485218,"month":"2024-06","text":"目前用起來沒啥大問題，大概就是要取車時的信用卡預授權會花一點時間，在夏天的地下停車場用起來會有點燥。","title":null,"userName":"Ping-han Han"},{"platform":"android","score":1,"date":"2024-07-19","timestamp":1721394664285,"month":"2024-07","text":"要不是只有一星，我連一顆都不想給 一直都有在使用格上租車（昨天才剛借完3天還完車），結果到今天竟然無預警把我停權了，原因是我哥2年前被格上停權，所以連帶我這個弟弟在2年後的今天被停權了？客服還回覆不會在開通了？請問會員規章裡面有寫會員停權誅連九族嗎😒😒","title":null,"userName":"江威"},{"platform":"android","score":1,"date":"2024-08-01","timestamp":1722505792250,"month":"2024-08","text":"拍照上傳完成還車離開後，系統通知尚未還車，聯絡客服說沒有還車紀錄要求使用者在回去停車場再重新操作一次還車手續，不知道是app 系統當機還是什麼原因導致沒有還車紀錄，感受很差","title":null,"userName":"蔡文國"},{"platform":"android","score":1,"date":"2024-08-12","timestamp":1723492171685,"month":"2024-08","text":"不知道的以為自己住在偏遠山區，我是住在繁榮的市區耶，結果附近完全沒有車，同站租還兩三隻貓，異站租連半隻貓都沒有，真不知道用你們家的意義在哪","title":null,"userName":"Ku Ku"},{"platform":"android","score":1,"date":"2024-08-16","timestamp":1723804572502,"month":"2024-08","text":"會叫客戶付費幫他們修莫名奇妙地刮痕喔，要小心！","title":null,"userName":"CHANG CHILI"},{"platform":"android","score":4,"date":"2024-08-25","timestamp":1724582000663,"month":"2024-08","text":"註冊方便快速，軟體操作介面清楚，車款多元 歡迎輸入我的格上租車邀請碼：2x23r 註冊輸入成功，可享好友專屬優惠","title":null,"userName":"Liu Cheng"},{"platform":"android","score":5,"date":"2024-09-07","timestamp":1725752087422,"month":"2024-09","text":"先前往門市櫃檯辦理，第一次的租車與會員註冊資料，再櫃檯的協助下，處理app程序。 使用了近4個月，很順，可說是，簡易操作網上程序。 另一個iiR的，是線上申請完成 只用了幾次，但體驗不佳。","title":null,"userName":"葉柏凱"},{"platform":"android","score":5,"date":"2024-09-22","timestamp":1726981806330,"month":"2024-09","text":"向客服留言反應問題，很快得到回覆","title":null,"userName":"黃志弘"},{"platform":"android","score":5,"date":"2024-09-28","timestamp":1727525899899,"month":"2024-09","text":"使用方便迅速","title":null,"userName":"吳彥輝"},{"platform":"android","score":1,"date":"2024-10-18","timestamp":1729275332723,"month":"2024-10","text":"沒有開放外籍人士租共享車","title":null,"userName":"Aaron"},{"platform":"android","score":1,"date":"2024-10-23","timestamp":1729658322776,"month":"2024-10","text":"計價方式誤導消費者! 它標榜租超過10小時最多收10小時的錢，但是我使用了14小時多它卻多收我500多元，客服回覆說因為我設定還車是晚上10點，但實際還車是11點多，所以超過的一個多小時以原價記費。 （但我的認知是你寫超過10小時最多只能收10小時） 客服說條款裡都有寫（所以請各位想使用的請將條款一條一條看過並理解） 花500多元買一個教訓，跟各位分享以後要租車請直接將時間拉滿24小時，就不會有這個問題了，先幫各位省下冤枉錢。","title":null,"userName":"盧靜嫻"},{"platform":"android","score":2,"date":"2024-11-03","timestamp":1730599708460,"month":"2024-11","text":"車身很髒，希望可以配合加油站洗車功能，尤其颱風過後整個車身噴的髒兮兮，問客服只能自費洗車，覺得不合理。希望改善","title":null,"userName":"美吟"},{"platform":"android","score":5,"date":"2024-11-09","timestamp":1731161987987,"month":"2024-11","text":"更新後 目前很棒","title":null,"userName":"Deborah"},{"platform":"android","score":1,"date":"2024-11-17","timestamp":1731859956585,"month":"2024-11","text":"幾年沒租車了，從smart2go變成gosmart，生日優惠跟擺設一樣，平常就有優惠了，生日不能再折？這樣有沒有生日根本沒差多少錢啊！打電話去詢問還說是扣款才會顯示折扣價格，結果根本預定前的價格就是已經折扣過的，害我們以為會再打折才租。","title":null,"userName":"pan pan"},{"platform":"android","score":5,"date":"2024-11-26","timestamp":1732637384215,"month":"2024-11","text":"讚","title":null,"userName":"張惠芳"},{"platform":"android","score":5,"date":"2024-12-08","timestamp":1733686000537,"month":"2024-12","text":"好的","title":null,"userName":"章子龍"},{"platform":"android","score":1,"date":"2024-12-12","timestamp":1733995757505,"month":"2024-12","text":"帳號遭到暫停使用進線客服，被告知會請人員聯繫協助處理車損賠償，然後等到天荒地老。再次致電客服，再次被告知會請人員聯繫協助處理車損，然後再次等到天荒地老。後續不斷致電客服，每次都不斷被告知會請人員聯繫協助處理車損，然後就沒有然後了。貴公司客服當客戶太蠢時間太多，只會不斷跳針，車損問題永遠無法解決，只能被迫放棄使用。","title":null,"userName":"鮭魚紳士"},{"platform":"android","score":5,"date":"2024-12-13","timestamp":1734107087459,"month":"2024-12","text":"好用又方便。","title":null,"userName":"曾泉溪"},{"platform":"android","score":5,"date":"2024-12-14","timestamp":1734193219996,"month":"2024-12","text":"非常人性化的自助租車app,從申請到租車還車都讓人一目了然，大推一下💯💯👍🏻👍🏻","title":null,"userName":"陳瑞彬"},{"platform":"android","score":1,"date":"2024-12-28","timestamp":1735386800801,"month":"2024-12","text":"聯絡客服詢問時一定要選擇所在縣市／分店，但是app選項bug無法選取，導致無法送出詢問動作。人在國外無法致電詢問，請盡快修復問題。 只給1星，因為從Line嘗試訂車，然後被建議到app操作，耗費攏長時間後卻得不到答覆，一個早上就這樣沒了。","title":null,"userName":"HUANG智智"},{"platform":"android","score":1,"date":"2025-01-20","timestamp":1737384328909,"month":"2025-01","text":"在當天想要租車時詢問櫃檯，櫃檯解釋無法在當日無預約情況下租車建議我利用共享車輛租賃，下載app並抵達車輛處後，一系列的動作催促和付款方式綁定已經搞得使用者焦慮不安，在超過預定使用時間未還車接到通知時（預定時間設定6hr）也打去門市詢問，得到的通知是只要未超過當日的時間歸還最高只要支付10hr的租金，結果還車時通知逾時4hr,作為罰金，除了本來的租金外我還要支付另外的1600，還多為車輛加滿了油錢，這些在當下我們下載app時都完全沒有任何提示，簡直就是在詐騙","title":null,"userName":"李俊樑"},{"platform":"android","score":5,"date":"2025-01-21","timestamp":1737442328969,"month":"2025-01","text":"體驗和車子比irent好！希望可以有更多北市臨停的選擇和租/還車付款時候可以快速驗證，不用還要收簡訊再otp~~","title":null,"userName":"WHY Y"},{"platform":"android","score":2,"date":"2025-01-24","timestamp":1737728842707,"month":"2025-01","text":"還車流程超級反直覺，然後Luxgen S3寧可不租，垃圾中的垃圾","title":null,"userName":"Hsieh KaiHsaun"},{"platform":"android","score":1,"date":"2025-02-12","timestamp":1739322545313,"month":"2025-02","text":"昨晚到現在上午九點多，該 app 仍然是當機狀態，根本動不了！","title":null,"userName":"Alex Shih"},{"platform":"android","score":5,"date":"2025-02-17","timestamp":1739830382898,"month":"2025-02","text":"比iRent好用太多了，iRent客服超爛的一次我就不想用了，格上，超讚","title":null,"userName":"Lung Loopee"},{"platform":"android","score":5,"date":"2025-03-06","timestamp":1741291773510,"month":"2025-03","text":"Good","title":null,"userName":"Johnhow Fan"},{"platform":"android","score":1,"date":"2025-03-09","timestamp":1741490081970,"month":"2025-03","text":"app上不能更改支付信用卡.要去網站太麻煩","title":null,"userName":"Eddie Tseng"},{"platform":"android","score":1,"date":"2025-04-06","timestamp":1743952019241,"month":"2025-04","text":"麻煩系統設定一下，隨意租還車輛顯示剩餘租用次數，不然我本來可以在空地還車再租用，結果不給我租用，後來要跟我收拖吊費，還給我報價3000以上，無上限，很敢說。","title":null,"userName":"林志展"},{"platform":"android","score":1,"date":"2025-04-28","timestamp":1745833222458,"month":"2025-04","text":"敬告格上，車輛安全為租車行業的基本。若連最基本的輪胎把關也沒做好，日享租車乾脆收一收了；做好門市租賃即可吧。平常都至門市預約租車，這次剛好試了日享車，結果租到一台輪胎磨到編織層出來的車。夜色昏暗，等到白天看到發現時，我只能說我一家人真的是福大命大安全度過高速公路。格上！加油，好嘛","title":null,"userName":"Dragon Jhu"},{"platform":"android","score":1,"date":"2025-05-23","timestamp":1747971182571,"month":"2025-05","text":"無法登入","title":null,"userName":"陳添貴"},{"platform":"android","score":1,"date":"2025-05-28","timestamp":1748432689770,"month":"2025-05","text":"一直驗證一直要我重新驗證，鬼打牆的app","title":null,"userName":"楊布魯斯"},{"platform":"android","score":5,"date":"2025-06-04","timestamp":1749075178999,"month":"2025-06","text":"very good.","title":null,"userName":"吳忻樺"},{"platform":"android","score":1,"date":"2025-06-13","timestamp":1749784090459,"month":"2025-06","text":"古代人的租車系統。誰還用紙本駕照呀。食古不化。難怪生意沒比和運好。思維要進化。不要LKK.爛到爆的格上。不再跟你們打交道了。X","title":null,"userName":"革命"},{"platform":"android","score":5,"date":"2025-06-25","timestamp":1750849525659,"month":"2025-06","text":"棒","title":null,"userName":"葉正昌"},{"platform":"android","score":5,"date":"2025-06-26","timestamp":1750946649564,"month":"2025-06","text":"很好","title":null,"userName":"廖浚銘"},{"platform":"android","score":5,"date":"2025-06-28","timestamp":1751107878716,"month":"2025-06","text":"很棒","title":null,"userName":"蔡亞錡"},{"platform":"android","score":5,"date":"2025-06-29","timestamp":1751203377270,"month":"2025-06","text":"車子品質佳","title":null,"userName":"Renee Chang"},{"platform":"android","score":5,"date":"2025-06-30","timestamp":1751283962123,"month":"2025-06","text":"讚！比irent好太多了","title":null,"userName":"sky"},{"platform":"android","score":3,"date":"2025-07-01","timestamp":1751356676622,"month":"2025-07","text":"前輪抖動 雨刷抖動","title":null,"userName":"張海龍"},{"platform":"android","score":5,"date":"2025-07-02","timestamp":1751425414951,"month":"2025-07","text":"方便","title":null,"userName":"陳國銘"},{"platform":"android","score":5,"date":"2025-07-10","timestamp":1752129607105,"month":"2025-07","text":"車美 好開","title":null,"userName":"鄭文彬"},{"platform":"android","score":2,"date":"2025-07-13","timestamp":1752394343802,"month":"2025-07","text":"整體體驗都不錯，車子算整潔，但租車你預扣費用是什麼意思？我還沒用就先被扣一筆3000塊？我才用多久而已，人家irent都沒你暴力...","title":null,"userName":"BeBo Lin"},{"platform":"android","score":5,"date":"2025-07-15","timestamp":1752549562387,"month":"2025-07","text":"租車透明化，多種選擇","title":null,"userName":"麒ming"},{"platform":"android","score":1,"date":"2025-07-15","timestamp":1752564889481,"month":"2025-07","text":"APP亂設計，變成無法取車，預約好的車要在現場取消再重新預約。好棒棒的薪水小偷，好棒棒的資訊部！","title":null,"userName":"網路小子"},{"platform":"android","score":5,"date":"2025-07-17","timestamp":1752738609799,"month":"2025-07","text":"可靠","title":null,"userName":"Spikeykuo Kuo"},{"platform":"android","score":5,"date":"2025-07-17","timestamp":1752795491728,"month":"2025-07","text":"操作嘛麻煩","title":null,"userName":"Gino Chen"},{"platform":"android","score":5,"date":"2025-07-18","timestamp":1752805487194,"month":"2025-07","text":"還不錯用","title":null,"userName":"Tom Wu"},{"platform":"android","score":5,"date":"2025-07-18","timestamp":1752850547677,"month":"2025-07","text":"車輛乾淨，app使用上也順暢，真的大推。","title":null,"userName":"江育米"},{"platform":"android","score":5,"date":"2025-07-19","timestamp":1752915132210,"month":"2025-07","text":"後座殘留上位使用者煙灰","title":null,"userName":"[布萊恩旅遊日記]（布萊恩旅遊日記）"},{"platform":"android","score":5,"date":"2025-07-19","timestamp":1752915309765,"month":"2025-07","text":"裕隆的就是比較貼心實在 也比較沒有三手菸問題","title":null,"userName":"L S"},{"platform":"android","score":1,"date":"2025-07-19","timestamp":1752926965705,"month":"2025-07","text":"上一台車沒有key","title":null,"userName":"Queenty Chen"},{"platform":"android","score":2,"date":"2025-07-20","timestamp":1753032069163,"month":"2025-07","text":"證件明明已經補件，還是一直顯示請重新上傳","title":null,"userName":"Keena Z"},{"platform":"android","score":5,"date":"2025-07-21","timestamp":1753068020621,"month":"2025-07","text":"郭站長 服務很熱心","title":null,"userName":"Perfume Wang"},{"platform":"android","score":5,"date":"2025-07-27","timestamp":1753631624337,"month":"2025-07","text":"車況與車種都很多元。定價也合理","title":null,"userName":"張鈞"},{"platform":"android","score":5,"date":"2025-07-29","timestamp":1753814362334,"month":"2025-07","text":"好","title":null,"userName":"潘月珠"},{"platform":"android","score":5,"date":"2025-07-30","timestamp":1753862586865,"month":"2025-07","text":"現場服務人員超棒的","title":null,"userName":"林志學婕依爸"},{"platform":"android","score":5,"date":"2025-08-06","timestamp":1754450212996,"month":"2025-08","text":"好方便","title":null,"userName":"ko bingtau"},{"platform":"android","score":1,"date":"2025-08-08","timestamp":1754619561604,"month":"2025-08","text":"預約當下的「預約租金（不含里程費/eTag）」是騙人的，最後還車時的金額高很多🤬 反應客服後，只願意賠償「優惠券」。所以我必須「再次」租車才能彌補「這次」的損失，而且優惠券也分成好幾張、一次租車只能抵用一張🤬 最初是你們的失誤，要賠償也很不乾脆","title":null,"userName":"Chen Owen"},{"platform":"android","score":1,"date":"2025-08-10","timestamp":1754813427174,"month":"2025-08","text":"密碼要求一大堆，什麼組合都不行","title":null,"userName":"id Super"},{"platform":"android","score":5,"date":"2025-08-11","timestamp":1754887080530,"month":"2025-08","text":"不錯","title":null,"userName":"張仕昌"},{"platform":"android","score":5,"date":"2025-08-16","timestamp":1755354644767,"month":"2025-08","text":"讚","title":null,"userName":"Hountree Chen"},{"platform":"android","score":5,"date":"2025-08-16","timestamp":1755363539654,"month":"2025-08","text":"好用","title":null,"userName":"蔣凱宸"},{"platform":"android","score":5,"date":"2025-08-17","timestamp":1755422811339,"month":"2025-08","text":"讚！","title":null,"userName":"蔡育陞"},{"platform":"android","score":5,"date":"2025-08-25","timestamp":1756085351725,"month":"2025-08","text":"讚","title":null,"userName":"yuan-hou sun"},{"platform":"android","score":5,"date":"2025-08-25","timestamp":1756121400229,"month":"2025-08","text":"方便","title":null,"userName":"建宏"},{"platform":"android","score":5,"date":"2025-08-30","timestamp":1756542642328,"month":"2025-08","text":"很棒","title":null,"userName":"林耀"},{"platform":"android","score":5,"date":"2025-09-01","timestamp":1756713986709,"month":"2025-09","text":"方便快速","title":null,"userName":"Hunter Chen"},{"platform":"android","score":3,"date":"2025-09-02","timestamp":1756801984100,"month":"2025-09","text":"車身不潔，外表有損(我租之前即存在)","title":null,"userName":"Yang Kevin"},{"platform":"android","score":1,"date":"2025-09-05","timestamp":1757038499628,"month":"2025-09","text":"🐛無法刪除信用卡；🤬當初在預約時顯示「預約租金（不含里程費/eTag）」是880，我甚至有預約當下的截圖。但最後的「時間租金」扣掉「優惠方案」（不含任何里程費、安心免責、額外費用）竟然是2280，被騙的感覺","title":null,"userName":"Owen Chen"},{"platform":"android","score":5,"date":"2025-09-05","timestamp":1757091241906,"month":"2025-09","text":"也是不錯的選擇","title":null,"userName":"有隻熊"},{"platform":"android","score":3,"date":"2025-09-18","timestamp":1758188648880,"month":"2025-09","text":"新註冊用戶輸入邀請碼：AzEWL 最高賺390租車金","title":null,"userName":"jonas"},{"platform":"android","score":3,"date":"2025-09-27","timestamp":1758960317548,"month":"2025-09","text":"車內清潔不太行","title":null,"userName":"黃俊榮"},{"platform":"android","score":5,"date":"2025-09-27","timestamp":1758985469132,"month":"2025-09","text":"這台車很好開，唯獨冷氣聲音很大聲","title":null,"userName":"楊崇欣"},{"platform":"android","score":1,"date":"2025-09-27","timestamp":1758985953444,"month":"2025-09","text":"我換OPPO Reno 14 PRO租車，租車前不是要拍照，左前方，右前方，左後方，右後方，我進拍照畫面，畫面的顯示，畫面整個放大，無法調整。我手機相機是正常的，希望工程師能幫忙改善","title":null,"userName":"WD L"},{"platform":"android","score":4,"date":"2025-09-28","timestamp":1759064194125,"month":"2025-09","text":"胎壓偵測不正常 無法校正","title":null,"userName":"chiaho tsai"},{"platform":"android","score":5,"date":"2025-09-28","timestamp":1759076715989,"month":"2025-09","text":"讚","title":null,"userName":"楊淇璋"},{"platform":"android","score":5,"date":"2025-10-03","timestamp":1759479076653,"month":"2025-10","text":"方便乾淨","title":null,"userName":"廖建智"},{"platform":"android","score":5,"date":"2025-10-04","timestamp":1759588220360,"month":"2025-10","text":"車況好，價格公道","title":null,"userName":"Gunter Lee"},{"platform":"android","score":5,"date":"2025-10-06","timestamp":1759770959971,"month":"2025-10","text":"希望異站租還可以到嘉義或台南","title":null,"userName":"香風智乃"},{"platform":"android","score":5,"date":"2025-10-07","timestamp":1759823518767,"month":"2025-10","text":"很好","title":null,"userName":"許影由"},{"platform":"android","score":1,"date":"2025-10-08","timestamp":1759918090560,"month":"2025-10","text":"第一次短程試用狀況很不錯，於是第二次承租安排長途多日旅程，但是....就出大包了 第一台車已於3天前預約，但當天居然找不到車，而且app還車的照片，5張都是無車牌，空白的地板照，找到取車時限快到只能無奈取消重找，預約時的優惠沒了 好不容易在走路路程20分鍾後的停車場取到第二台車（已清潔認證），牽車時發現車窗都微開，因已延遲行程所以沒留意異狀，但...在路途中就發現問題了， 原來前客應該是載寵物+寵物飼料，飼料味開始不斷飄出，即使已買除臭劑+室外循環+開窗，還是有非常重的味道，除了貴600，還有散不去的寵物飼料味 第一天就反應客服，也是只能回覆：很抱歉，因為已經離開本地，且已使用，無法做任何處理，目前旅途進行中，也只能自認倒楣了 以上，請大家要多留意這些問題，以免旅途掃興。","title":null,"userName":"鄭嘉緯"},{"platform":"android","score":1,"date":"2025-10-10","timestamp":1760101646382,"month":"2025-10","text":"我又沒安裝，卻一直收到認證簡訊","title":null,"userName":"Jalon Chen"},{"platform":"android","score":5,"date":"2025-10-11","timestamp":1760165973952,"month":"2025-10","text":"借還車流程順暢，車況良好，車內乾淨無菸味無狗貓毛，下次一定再借一次","title":null,"userName":"Wei-Tsung Hung"},{"platform":"android","score":4,"date":"2025-10-12","timestamp":1760258598514,"month":"2025-10","text":"此次車輛是MG車款，還有天窗配備，感覺不錯。 只是車輛5am要開出三總停車場時，有感應停車卡及車牌辨識，都無法開門，有點延遲出發時間。 最後是打電話給停車場管理員，才幫忙解決柵欄沒開的問題。 但整體租車使用感覺都可以。","title":null,"userName":"Ko Young"},{"platform":"android","score":5,"date":"2025-10-12","timestamp":1760312884640,"month":"2025-10","text":"讚噢 滿分","title":null,"userName":"豐森楊"},{"platform":"android","score":1,"date":"2025-10-13","timestamp":1760376048338,"month":"2025-10","text":"不順超不順的現在都亂掉了整個手機亂叫","title":null,"userName":"王曉惠"},{"platform":"android","score":1,"date":"2025-10-15","timestamp":1760508604840,"month":"2025-10","text":"超爛超難用","title":null,"userName":"不知道"},{"platform":"android","score":1,"date":"2025-10-17","timestamp":1760686254545,"month":"2025-10","text":"垃圾審合軟體 同樣的證件照片 別家的都能通過 就你家的傳好幾次 還TMD通不過 還說我的證件有問題 你們這間靠政府補助 的爛公司才有問題","title":null,"userName":"草尼馬趕羚羊"},{"platform":"android","score":1,"date":"2025-10-20","timestamp":1760926760390,"month":"2025-10","text":"小車 租不到三天要七千多，嚇死人 下次不會再用了！！","title":null,"userName":"空境（之）"},{"platform":"android","score":5,"date":"2025-10-25","timestamp":1761385508777,"month":"2025-10","text":"APP 租 Luxgen n7 電動車 很方便 ！！","title":null,"userName":"chang franklyn"},{"platform":"android","score":5,"date":"2025-10-26","timestamp":1761455142387,"month":"2025-10","text":"讚","title":null,"userName":"JIAJENG Ju"},{"platform":"android","score":4,"date":"2025-10-28","timestamp":1761662802349,"month":"2025-10","text":"線上可以選的車不多 操作簡單","title":null,"userName":"Oscar Hsu"},{"platform":"android","score":5,"date":"2025-11-05","timestamp":1762322057968,"month":"2025-11","text":"很方便","title":null,"userName":"蔡toto"},{"platform":"android","score":1,"date":"2025-11-07","timestamp":1762498517549,"month":"2025-11","text":"去你的電子簽名審核不通過！就你審核不過！什麼叫作要「以正楷中文書寫」？你去跟川普說要用正楷英文書寫簽名啊！去跟周杰倫說要用正楷中文簽名啊！簽名是為了個人簽署，必須要有獨特性、難以模仿，要「以正楷中文書寫」那是不是乾脆電腦打字就好？一定是清楚好辨識且好模仿的啦！況且現在都什麼時代了，你們要不要查一下銀行怎麼用FIDO取代簽名的？明明你們也用手機上的生物辨識，卻連這個都做不到嗎？你們是自己沒有簽名需求，不知道用手機小螢幕簽名很難簽嗎？還是你們出門都拿平板借車？","title":null,"userName":"RJ Hsiao"},{"platform":"android","score":5,"date":"2025-11-08","timestamp":1762610895593,"month":"2025-11","text":"很方便","title":null,"userName":"Howard Liu"},{"platform":"android","score":3,"date":"2025-11-09","timestamp":1762707127784,"month":"2025-11","text":"還車拍照的系統尚需改善，無法讓相機對焦，導致畫面不清晰，若有所爭議，這點只能貴司再行調整。","title":null,"userName":"Jeffrey Chang"},{"platform":"android","score":1,"date":"2025-11-13","timestamp":1763025522943,"month":"2025-11","text":"程序有夠麻煩","title":null,"userName":"陳子維"},{"platform":"android","score":2,"date":"2025-11-14","timestamp":1763117477370,"month":"2025-11","text":"站點太少，租還車過程太麻煩","title":null,"userName":"Gilbert Cheng"},{"platform":"android","score":5,"date":"2025-11-14","timestamp":1763122254665,"month":"2025-11","text":"車況不錯 車內座椅乾淨","title":null,"userName":"Lina LU"},{"platform":"android","score":5,"date":"2025-11-16","timestamp":1763255849201,"month":"2025-11","text":"第一次租格上共享汽車，體驗還不錯，值得分享","title":null,"userName":"彭珮筠"},{"platform":"android","score":3,"date":"2025-11-17","timestamp":1763381932580,"month":"2025-11","text":"沒導航","title":null,"userName":"hanks Li"},{"platform":"android","score":5,"date":"2025-11-20","timestamp":1763627080517,"month":"2025-11","text":"資料審核很快不錯哦！！","title":null,"userName":"黃小東"},{"platform":"android","score":5,"date":"2025-11-21","timestamp":1763718968945,"month":"2025-11","text":"操作方便簡單不錯用","title":null,"userName":"廖峻陞"},{"platform":"android","score":1,"date":"2025-11-23","timestamp":1763870042724,"month":"2025-11","text":"好像沒辦法設定一天內借還的租車啊 ……APP內強制都要隔日借還，這樣要當日借還的根本沒法使用","title":null,"userName":"Ethan Yang"},{"platform":"android","score":5,"date":"2025-11-25","timestamp":1764079189830,"month":"2025-11","text":"第一次租借，真的很方便、下午有需要會多多使用。","title":null,"userName":"王舒"},{"platform":"android","score":2,"date":"2025-12-03","timestamp":1764762359486,"month":"2025-12","text":"停車費應該還車的時候就要結清，怎麼會被催繳了才轉價給消費者？","title":null,"userName":"Darren Chiang"},{"platform":"android","score":3,"date":"2025-12-06","timestamp":1765028841520,"month":"2025-12","text":"遮陽板掉落","title":null,"userName":"黃素青"},{"platform":"android","score":5,"date":"2025-12-09","timestamp":1765270011713,"month":"2025-12","text":"方便簡單","title":null,"userName":"小黑"},{"platform":"android","score":1,"date":"2025-12-17","timestamp":1765940233756,"month":"2025-12","text":"現在這app改成紙糊的嗎？選了站點、時間以後，要開始挑車，點進去轉圈完跑系統錯誤，然後就一直重複發生系統錯誤的循環...","title":null,"userName":"Leo Lee"},{"platform":"android","score":4,"date":"2025-12-17","timestamp":1765976765724,"month":"2025-12","text":"車況還不錯，只是後照鏡污漬多 。導致看不清楚。","title":null,"userName":"林倩如"},{"platform":"android","score":4,"date":"2025-12-25","timestamp":1766636897506,"month":"2025-12","text":"第一次使用還不清楚","title":null,"userName":"謝鎮盟"},{"platform":"android","score":5,"date":"2025-12-26","timestamp":1766751428649,"month":"2025-12","text":"非常好的體驗","title":null,"userName":"李承傑"},{"platform":"android","score":5,"date":"2025-12-27","timestamp":1766814310410,"month":"2025-12","text":"車子還不錯 謝謝","title":null,"userName":"黃凱西黃凱西"},{"platform":"android","score":5,"date":"2025-12-29","timestamp":1766993564296,"month":"2025-12","text":"方便","title":null,"userName":"CHAO TE WU"},{"platform":"android","score":3,"date":"2026-01-02","timestamp":1767347559824,"month":"2026-01","text":"以前 還可 逮到 揪出 抓住了 真正 的 mac !真正 的 ip ！ 請注入 增加 AI 以 強化 增固！","title":null,"userName":"Peter Pure"},{"platform":"android","score":5,"date":"2026-01-05","timestamp":1767591876440,"month":"2026-01","text":"操作簡單明瞭","title":null,"userName":"IIKKIINN SSOO"},{"platform":"android","score":5,"date":"2026-01-06","timestamp":1767694236330,"month":"2026-01","text":"好用方便省錢移動式的好方式","title":null,"userName":"莊曜浚"},{"platform":"android","score":3,"date":"2026-01-08","timestamp":1767868331547,"month":"2026-01","text":"找車用了一小時，其餘不錯","title":null,"userName":"CLin Peng"},{"platform":"android","score":5,"date":"2026-01-10","timestamp":1768057077296,"month":"2026-01","text":"不錯！租車真方便","title":null,"userName":"泰迪熊（泰迪熊）"},{"platform":"android","score":5,"date":"2026-01-11","timestamp":1768128369968,"month":"2026-01","text":"車內清潔，沒有味道，非常值得推薦，若有需要，一定繼續使用。","title":null,"userName":"實研魁章"},{"platform":"android","score":2,"date":"2026-01-11","timestamp":1768129226372,"month":"2026-01","text":"越來越爛 IRENT 化了 車上都髒的","title":null,"userName":"DH"},{"platform":"android","score":4,"date":"2026-01-16","timestamp":1768540122655,"month":"2026-01","text":"過年硬要限三天不是很好","title":null,"userName":"Lawrence Juo"},{"platform":"android","score":5,"date":"2026-01-24","timestamp":1769286037593,"month":"2026-01","text":"好用","title":null,"userName":"忠憲吳"},{"platform":"android","score":5,"date":"2026-01-25","timestamp":1769349686240,"month":"2026-01","text":"非常方便","title":null,"userName":"Cole"},{"platform":"android","score":1,"date":"2026-01-31","timestamp":1769902775810,"month":"2026-02","text":"跟irent一樣半斤八兩，一堆垃圾條款，繳費繳的莫名其妙","title":null,"userName":"Serapn sh"},{"platform":"android","score":5,"date":"2026-02-01","timestamp":1769931053745,"month":"2026-02","text":"1/27新店斯馨站租Sentra(6703) 完成預約但取車時發生-預約資訊異常-無法取車， 聯絡電話客服後才順利取車， 有自己嘗試過重開機也無法排除問題， 請問有沒有異常問題原因跟因應方式提供參考，謝謝！","title":null,"userName":"Xuan LX"},{"platform":"android","score":5,"date":"2026-02-03","timestamp":1770083512297,"month":"2026-02","text":"希望格上可以有更多車款加入共享車 希望台南新營 可以 有一個據點有xc40或golf可以租","title":null,"userName":"小智乃"},{"platform":"android","score":5,"date":"2026-02-04","timestamp":1770229983955,"month":"2026-02","text":"共享車體驗讚","title":null,"userName":"賴品諺"},{"platform":"android","score":1,"date":"2026-02-06","timestamp":1770390806354,"month":"2026-02","text":"垃圾app介面不能用 到底","title":null,"userName":"jason boy"},{"platform":"android","score":5,"date":"2026-02-07","timestamp":1770497282583,"month":"2026-02","text":"左邊車燈照射距離跟右邊的不一樣喔！","title":null,"userName":"林俊榮"},{"platform":"android","score":5,"date":"2026-02-10","timestamp":1770716172871,"month":"2026-02","text":"很好用，謝謝。","title":null,"userName":"黃凱佑"},{"platform":"android","score":3,"date":"2026-02-17","timestamp":1771304168279,"month":"2026-02","text":"雨刷刷不乾淨","title":null,"userName":"許勝智"},{"platform":"android","score":5,"date":"2026-02-17","timestamp":1771331782405,"month":"2026-02","text":"車子外觀太髒……","title":null,"userName":"綺羅生（給我個理由）"},{"platform":"android","score":5,"date":"2026-02-18","timestamp":1771396889779,"month":"2026-02","text":"太方便了","title":null,"userName":"SY Yang"},{"platform":"android","score":5,"date":"2026-02-18","timestamp":1771402598674,"month":"2026-02","text":"好用、方便、是否有車輛可以租用一目了然😁","title":null,"userName":"freeline pan"},{"platform":"android","score":1,"date":"2026-02-18","timestamp":1771410101729,"month":"2026-02","text":"車身太髒，至少一個月都沒洗車了。過年長租車應該要特別整理。才對。","title":null,"userName":"Jason Yang"},{"platform":"android","score":3,"date":"2026-02-18","timestamp":1771419151387,"month":"2026-02","text":"車內外都很髒","title":null,"userName":"薛人傑"},{"platform":"android","score":5,"date":"2026-02-18","timestamp":1771419630729,"month":"2026-02","text":"好用方便","title":null,"userName":"羅阿仁"},{"platform":"android","score":5,"date":"2026-02-18","timestamp":1771424888545,"month":"2026-02","text":"好用","title":null,"userName":"鍾昇亮"},{"platform":"android","score":5,"date":"2026-02-19","timestamp":1771465539793,"month":"2026-02","text":"客服專員請多加訓練，APP操作模式根本就不熟悉，電話可以增設網路電話可以立刻撥通有人可以服務，不是一直在排隊等待，出車禍怎麼辦？ 共享汽車收費直接收取24小時，我只使用3小時卻被收取3000，還被迫需要等待12-20個工作天，超收費用才會退回來，Irent汽車是當下使用多少就只收多少，， 格上租車的使用體驗感受非常非常的差，而且租車價格也比Irent的貴，，使用一次再也不想承租了 是誰想被超收還等那麼久才退款的，又不是白痴，","title":null,"userName":"潘吇譽"},{"platform":"android","score":5,"date":"2026-02-19","timestamp":1771499677742,"month":"2026-02","text":"方便舒適","title":null,"userName":"panda Chen"},{"platform":"android","score":5,"date":"2026-02-23","timestamp":1771846857426,"month":"2026-02","text":"車況好，租車流程順暢","title":null,"userName":"黑翼"},{"platform":"android","score":5,"date":"2026-02-24","timestamp":1771906337670,"month":"2026-02","text":"更新版本破產","title":null,"userName":"張曉縵今日特餐50元全國各地抓鎖張曉縵"},{"platform":"android","score":5,"date":"2026-02-28","timestamp":1772269521365,"month":"2026-02","text":"手續簡單輕鬆，車況也很新。","title":null,"userName":"Cheng-Chieh CHANG"},{"platform":"android","score":5,"date":"2026-03-02","timestamp":1772449962360,"month":"2026-03","text":"還不錯·優·方便","title":null,"userName":"施玉龍"},{"platform":"android","score":5,"date":"2026-03-05","timestamp":1772725069219,"month":"2026-03","text":"很方便","title":null,"userName":"林菁源"},{"platform":"android","score":3,"date":"2026-03-09","timestamp":1773040683726,"month":"2026-03","text":"還行","title":null,"userName":"尹德揚"},{"platform":"android","score":5,"date":"2026-03-10","timestamp":1773153439584,"month":"2026-03","text":"租車非常方便 介面也很直觀跟簡潔","title":null,"userName":"Alex Yu"},{"platform":"android","score":4,"date":"2026-03-12","timestamp":1773286444902,"month":"2026-03","text":"使用便利","title":null,"userName":"Bruce Lin"},{"platform":"android","score":5,"date":"2026-03-20","timestamp":1773998273670,"month":"2026-03","text":"非常方便的共享租車方式 車輛很省油，好開 下次有需求，還會再使用 很方便又省錢。 讚!值得推薦。","title":null,"userName":"仲大志"},{"platform":"android","score":5,"date":"2026-03-21","timestamp":1774074871191,"month":"2026-03","text":"方便，好用","title":null,"userName":"映茹彭"},{"platform":"android","score":5,"date":"2026-03-21","timestamp":1774137555444,"month":"2026-03","text":"希望都能看全局 都能用中国翻譯台湾","title":null,"userName":"范譯文"},{"platform":"android","score":5,"date":"2026-03-22","timestamp":1774163906444,"month":"2026-03","text":"方便快速","title":null,"userName":"Joe Shih"},{"platform":"android","score":5,"date":"2026-03-23","timestamp":1774252741739,"month":"2026-03","text":"對於看車班詳細很明解","title":null,"userName":"陳素鑾"},{"platform":"android","score":3,"date":"2026-03-25","timestamp":1774429445377,"month":"2026-03","text":"以前核銷租車券後會分別顯示十張在券匣裡，不知道何時開始變成不會完整顯示，我核銷了兩筆各十張券，結果只出現兩張，這樣我是會知道還剩多少張能用嗎？","title":null,"userName":"Goodspeed"},{"platform":"android","score":5,"date":"2026-03-30","timestamp":1774840420420,"month":"2026-03","text":"方便好用","title":null,"userName":"放肆小辣椒"},{"platform":"android","score":4,"date":"2026-03-31","timestamp":1774979484690,"month":"2026-04","text":"第一次熟悉車輛中","title":null,"userName":"陳威全"},{"platform":"android","score":5,"date":"2026-04-01","timestamp":1775027731141,"month":"2026-04","text":"方便好用","title":null,"userName":"趙祥竹"},{"platform":"android","score":5,"date":"2026-04-01","timestamp":1775042236509,"month":"2026-04","text":"好棒，很好開","title":null,"userName":"陳儷蓉"},{"platform":"android","score":5,"date":"2026-04-04","timestamp":1775266337244,"month":"2026-04","text":"方便快速","title":null,"userName":"許瑋哲"},{"platform":"android","score":4,"date":"2026-04-06","timestamp":1775444814578,"month":"2026-04","text":"車子外觀清潔不優","title":null,"userName":"Fairy Ga"},{"platform":"android","score":5,"date":"2026-04-11","timestamp":1775912531363,"month":"2026-04","text":"方便","title":null,"userName":"朱國忠"},{"platform":"android","score":5,"date":"2026-04-13","timestamp":1776045900216,"month":"2026-04","text":"定車流程自然順暢","title":null,"userName":"Chienkuo Wang"},{"platform":"android","score":4,"date":"2026-04-14","timestamp":1776142268834,"month":"2026-04","text":"方便是方便但是要照很多照片","title":null,"userName":"衛雲生"},{"platform":"android","score":3,"date":"2026-04-18","timestamp":1776486691167,"month":"2026-04","text":"改版後，每次退出APP都要重新登入","title":null,"userName":"___"},{"platform":"android","score":3,"date":"2026-04-19","timestamp":1776571573486,"month":"2026-04","text":"已經使用一年都正常 今天改版之後無法常態保持登入 甚至同一組密碼早上還可以登入 但是突然被登出之後 無法再次使用相同密碼登入","title":null,"userName":"C.H Huang"},{"platform":"android","score":5,"date":"2026-04-22","timestamp":1776842601531,"month":"2026-04","text":"每次只要使用優惠券，保存的電子簽名就會全部失效 2026：目前更新後已正常","title":null,"userName":"ヴィンセント"},{"platform":"android","score":1,"date":"2026-04-28","timestamp":1777390366368,"month":"2026-04","text":"合約標示不完全，並未註明同站租還會收取在站點的停車費","title":null,"userName":"徐霆宇"},{"platform":"android","score":5,"date":"2026-04-30","timestamp":1777511699273,"month":"2026-04","text":"方便好用，車輛選擇多，租借點密集。","title":null,"userName":"周君義"},{"platform":"android","score":4,"date":"2026-05-16","timestamp":1778909505246,"month":"2026-05","text":"程式更新後，每開關軟體都會登出，又要再登入一次，有點不便希望能解決","title":null,"userName":"peng roy"},{"platform":"android","score":2,"date":"2026-05-19","timestamp":1779177542290,"month":"2026-05","text":"預約的共享車到了現場之後還發現車子不在現場，相當糟糕","title":null,"userName":"SHENG"},{"platform":"android","score":5,"date":"2026-05-27","timestamp":1779860760692,"month":"2026-05","text":"格上滿好訂車的APP 讚哦！","title":null,"userName":"鄭雷震"},{"platform":"android","score":5,"date":"2026-05-29","timestamp":1780046632764,"month":"2026-05","text":"沒有煙味，app也比競爭對手簡單易用。","title":null,"userName":"喻華德"},{"platform":"android","score":5,"date":"2026-05-30","timestamp":1780126669720,"month":"2026-05","text":"讚","title":null,"userName":"E Kung"},{"platform":"android","score":5,"date":"2026-06-07","timestamp":1780819298171,"month":"2026-06","text":"不錯","title":null,"userName":"Kuochih Hung"},{"platform":"android","score":4,"date":"2026-06-07","timestamp":1780840057796,"month":"2026-06","text":"讚","title":null,"userName":"50張立瑜"},{"platform":"android","score":2,"date":"2026-06-09","timestamp":1781012470429,"month":"2026-06","text":"可以來一趟小旅行","title":null,"userName":"江明南"},{"platform":"android","score":1,"date":"2026-06-12","timestamp":1781232605216,"month":"2026-06","text":"優秀","title":null,"userName":"阿部阿部"},{"platform":"android","score":5,"date":"2026-06-21","timestamp":1782015104449,"month":"2026-06","text":"讚讚","title":null,"userName":"GARY LIN"},{"platform":"android","score":5,"date":"2026-07-05","timestamp":1783232167348,"month":"2026-07","text":"非常方便","title":null,"userName":"Kevin"},{"platform":"android","score":5,"date":"2026-07-07","timestamp":1783430150181,"month":"2026-07","text":"方便又快速的租車選擇","title":null,"userName":"陳子騫"},{"platform":"android","score":5,"date":"2026-07-10","timestamp":1783658939999,"month":"2026-07","text":"方便快速租用車","title":null,"userName":"黃坤淋"},{"platform":"android","score":2,"date":"2026-07-18","timestamp":1784366091244,"month":"2026-07","text":"the rest, -老人根夲不会弄，就一直叫要更新很煩不要再跳出來了，一","title":null,"userName":"魏月霞"},{"platform":"android","score":5,"date":"2026-07-26","timestamp":1785080753978,"month":"2026-07","text":"車子外觀 內裝保持良好","title":null,"userName":"陳小陳"},{"platform":"android","score":1,"date":"2026-07-29","timestamp":1785297294814,"month":"2026-07","text":"管轄編號錯誤了，又不給人修改，又不准刪除帳號，否則180天不給使用，那APP BUG,令使用者無所適從，阿是怎樣，FXK","title":null,"userName":"Numen Chen"},{"platform":"android","score":5,"date":"2026-07-29","timestamp":1785309794260,"month":"2026-07","text":"很順很方便！","title":null,"userName":"Benjamin Hung"},{"platform":"android","score":5,"date":"2026-07-29","timestamp":1785318563507,"month":"2026-07","text":"很棒的，使用情況。車子外面有刮痕，第一次會搞不清楚情況 app可以在友善一點。","title":null,"userName":"popkidstu123"},{"platform":"android","score":1,"date":"2026-08-01","timestamp":1785599668126,"month":"2026-08","text":"一直被登出","title":null,"userName":"9M"},{"platform":"android","score":5,"date":"2026-08-06","timestamp":1785982762333,"month":"2026-08","text":"方便快速","title":null,"userName":"吾名茜"},{"platform":"android","score":3,"date":"2026-08-07","timestamp":1786110988271,"month":"2026-08","text":"太累了太囉嗦了帳戶詳细资料不能给恐有詐sorry、","title":null,"userName":"陳先生"},{"platform":"android","score":4,"date":"2026-08-12","timestamp":1786575696435,"month":"2026-08","text":"還車流程不應該計入租車時間","title":null,"userName":"Boyiilee Boyiilee"},{"platform":"android","score":2,"date":"2026-08-14","timestamp":1786718049587,"month":"2026-08","text":"車子沒有清潔","title":null,"userName":"周軒逸"}],"dateRange":{"earliest":"2022-12-17","latest":"2026-08-14"},"hasFullHistory":true};
+    const dataset = {"monthKeys":["2023-01","2023-06","2024-02","2026-08"],"monthlyStats":[{"month":"2023-01","androidAvg":3,"iosAvg":null,"androidCount":1,"iosCount":0},{"month":"2023-06","androidAvg":5,"iosAvg":null,"androidCount":1,"iosCount":0},{"month":"2024-02","androidAvg":1,"iosAvg":null,"androidCount":1,"iosCount":0},{"month":"2026-08","androidAvg":3,"iosAvg":3.3333333333333335,"androidCount":4,"iosCount":3}],"androidDist":{"1":2,"2":1,"3":1,"4":1,"5":2},"iosDist":{"1":0,"2":1,"3":1,"4":0,"5":1},"androidTotal":7,"iosTotal":3,"androidAvgOverall":3,"iosAvgOverall":3.3333333333333335,"allReviewsFlat":[{"platform":"android","score":3,"date":"2023-01-15","timestamp":1673776800000,"month":"2023-01","text":"還可以","title":null,"userName":"user1","sentiment":"neutral","categories":["其他"]},{"platform":"android","score":5,"date":"2023-06-20","timestamp":1687255200000,"month":"2023-06","text":"很棒","title":null,"userName":"user2","sentiment":"positive","categories":["其他"]},{"platform":"android","score":1,"date":"2024-02-10","timestamp":1707559200000,"month":"2024-02","text":"取車失敗","title":null,"userName":"user3","sentiment":"negative","categories":["取車相關"]},{"platform":"ios","score":5,"date":"2026-08-17","timestamp":1786924800000,"month":"2026-08","text":"訂車很方便","title":"不錯用","userName":null,"sentiment":"positive","categories":["其他"]},{"platform":"android","score":4,"date":"2026-08-17","timestamp":1786960800000,"month":"2026-08","text":"還算方便","title":null,"userName":"林小美","sentiment":"positive","categories":["其他"]},{"platform":"ios","score":2,"date":"2026-08-18","timestamp":1787011200000,"month":"2026-08","text":"App常常閃退","title":"介面卡頓","userName":null,"sentiment":"negative","categories":["系統"]},{"platform":"android","score":5,"date":"2026-08-18","timestamp":1787047200000,"month":"2026-08","text":"服務很好","title":null,"userName":"陳小華","sentiment":"positive","categories":["其他"]},{"platform":"android","score":2,"date":"2026-08-19","timestamp":1787133600000,"month":"2026-08","text":"車子沒有清潔","title":null,"userName":"王小明","sentiment":"negative","categories":["其他"]},{"platform":"ios","score":3,"date":"2026-08-20","timestamp":1787184000000,"month":"2026-08","text":"更新後有點慢","title":"新版更新","userName":null,"sentiment":"neutral","categories":["其他"]},{"platform":"android","score":1,"date":"2026-08-20","timestamp":1787216400000,"month":"2026-08","text":"還車流程不應該計入租車時間","title":null,"userName":"周先生","sentiment":"negative","categories":["還車相關"]}],"categoryOrder":["定車相關","取車相關","還車相關","客服","審核","付款","站點與車輛數","停權","基本資料","系統","車輛設備","優惠碼/優惠券","帳號","車損拍照","通知","軟體更新","icon設計","投保","搜尋","更改密碼","共同承租人","其他"],"categoryStats":{"定車相關":{"positive":0,"neutral":0,"negative":0},"取車相關":{"positive":0,"neutral":0,"negative":1},"還車相關":{"positive":0,"neutral":0,"negative":1},"客服":{"positive":0,"neutral":0,"negative":0},"審核":{"positive":0,"neutral":0,"negative":0},"付款":{"positive":0,"neutral":0,"negative":0},"站點與車輛數":{"positive":0,"neutral":0,"negative":0},"停權":{"positive":0,"neutral":0,"negative":0},"基本資料":{"positive":0,"neutral":0,"negative":0},"系統":{"positive":0,"neutral":0,"negative":1},"車輛設備":{"positive":0,"neutral":0,"negative":0},"優惠碼/優惠券":{"positive":0,"neutral":0,"negative":0},"帳號":{"positive":0,"neutral":0,"negative":0},"車損拍照":{"positive":0,"neutral":0,"negative":0},"通知":{"positive":0,"neutral":0,"negative":0},"軟體更新":{"positive":0,"neutral":0,"negative":0},"icon設計":{"positive":0,"neutral":0,"negative":0},"投保":{"positive":0,"neutral":0,"negative":0},"搜尋":{"positive":0,"neutral":0,"negative":0},"更改密碼":{"positive":0,"neutral":0,"negative":0},"共同承租人":{"positive":0,"neutral":0,"negative":0},"其他":{"positive":4,"neutral":2,"negative":1}},"dateRange":{"earliest":"2023-01-15","latest":"2026-08-20"},"hasFullHistory":true};
+
+    // 註冊縮放/平移外掛（不同版本的 UMD 建置可能掛在不同全域變數名稱下，都嘗試看看）
+    const zoomPluginRef = window.ChartZoom || window['chartjs-plugin-zoom'];
+    if (zoomPluginRef && window.Chart) {
+      Chart.register(zoomPluginRef);
+    }
 
     document.getElementById('subtitle').textContent =
       '資料期間：' + dataset.dateRange.earliest + ' ~ ' + dataset.dateRange.latest +
@@ -222,6 +303,103 @@
       });
     });
 
+    // ===== 情緒分析 tab：情緒 × 類別 統計圖 =====
+    const sentimentLabelMap = { positive: '正面', neutral: '中性', negative: '負面' };
+    const sentimentOrder = ['positive', 'neutral', 'negative'];
+
+    const categoryChartInstance = new Chart(document.getElementById('categoryChart'), {
+      type: 'bar',
+      data: {
+        labels: dataset.categoryOrder,
+        datasets: [
+          {
+            label: '正面',
+            data: dataset.categoryOrder.map(c => dataset.categoryStats[c].positive),
+            backgroundColor: '#3ddc84',
+            sentimentKey: 'positive',
+          },
+          {
+            label: '中性',
+            data: dataset.categoryOrder.map(c => dataset.categoryStats[c].neutral),
+            backgroundColor: '#5b6272',
+            sentimentKey: 'neutral',
+          },
+          {
+            label: '負面',
+            data: dataset.categoryOrder.map(c => dataset.categoryStats[c].negative),
+            backgroundColor: '#ff6b6b',
+            sentimentKey: 'negative',
+          },
+        ],
+      },
+      options: {
+        scales: {
+          x: { stacked: true, ticks: { color: '#9aa0ac' }, grid: { display: false } },
+          y: { stacked: true, ticks: { color: '#9aa0ac' }, grid: { color: '#2a2e38' } },
+        },
+        plugins: { legend: { labels: { color: '#e8e9ed' } } },
+        onClick: (evt, elements) => {
+          if (!elements.length) return;
+          const el = elements[0];
+          const category = dataset.categoryOrder[el.index];
+          const sentimentKey = categoryChartInstance.data.datasets[el.datasetIndex].sentimentKey;
+          categorySelect.value = category;
+          setSentimentFilter(sentimentKey);
+        },
+      },
+    });
+
+    // ===== 情緒分析 tab：分類細節檢視 =====
+    const categorySelect = document.getElementById('categorySelect');
+    categorySelect.innerHTML = dataset.categoryOrder.map(c => '<option value="' + c + '">' + c + '</option>').join('');
+
+    let currentDetailSentiment = 'all';
+
+    function setSentimentFilter(key) {
+      currentDetailSentiment = key;
+      document.querySelectorAll('#sentimentToggleGroup .toggle-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.sentiment === key);
+      });
+      renderCategoryDetail();
+    }
+
+    function renderCategoryDetail() {
+      const category = categorySelect.value;
+      let list = dataset.allReviewsFlat.filter(r => r.categories.includes(category));
+      if (currentDetailSentiment !== 'all') {
+        list = list.filter(r => r.sentiment === currentDetailSentiment);
+      }
+      list = [...list].sort((a, b) => b.timestamp - a.timestamp).slice(0, 50);
+
+      const tbody = document.getElementById('categoryDetailTableBody');
+      const noteEl = document.getElementById('categoryDetailNote');
+
+      if (list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="color:#9aa0ac">目前沒有符合條件的評論</td></tr>';
+      } else {
+        tbody.innerHTML = list.map(r => `
+          <tr>
+            <td><span class="badge ${r.platform}">${r.platform === 'android' ? 'Android' : 'iOS'}</span></td>
+            <td>${r.date}</td>
+            <td class="${r.score <= 2 ? 'score-neg' : 'score-pos'}">${r.score} ★</td>
+            <td>
+              ${r.title ? '<div class="review-text"><b>' + r.title + '</b></div>' : ''}
+              <div class="review-text">${(r.text || '').slice(0, 200)}</div>
+              <div class="review-meta">${r.userName || ''}</div>
+            </td>
+          </tr>
+        `).join('');
+      }
+      noteEl.textContent = '「' + category + '」分類，最多顯示 50 則（依日期排序）。';
+    }
+
+    categorySelect.addEventListener('change', renderCategoryDetail);
+    document.querySelectorAll('#sentimentToggleGroup .toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => setSentimentFilter(btn.dataset.sentiment));
+    });
+
+    renderCategoryDetail();
+
     // ===== 評論 tab：散佈圖（每個點 = 一則評論） =====
     const monthKeys = dataset.monthKeys;
     function monthToIndex(m) {
@@ -229,8 +407,11 @@
       return idx === -1 ? 0 : idx;
     }
 
-    function buildScatterPoints(platform, minIndex) {
-      const list = dataset.allReviewsFlat.filter(r => r.platform === platform && monthToIndex(r.month) >= minIndex);
+    function buildScatterPoints(platform, minIndex, maxIndex) {
+      const list = dataset.allReviewsFlat.filter(r => {
+        const idx = monthToIndex(r.month);
+        return r.platform === platform && idx >= minIndex && idx <= maxIndex;
+      });
       // 同月份多筆評論加上小幅隨機水平偏移，避免點完全疊在一起
       const jitterMap = {};
       return list.map(r => {
@@ -265,11 +446,22 @@
     };
 
     let scatterChart = null;
+    let currentWindowSize = 6; // 月數，或 'all'
+    let currentWindowStart = 0;
 
-    function renderScatterChart(rangeMonths) {
-      const minIndex = rangeMonths === 'all' ? 0 : Math.max(0, monthKeys.length - rangeMonths);
-      const androidPoints = buildScatterPoints('android', minIndex);
-      const iosPoints = buildScatterPoints('ios', minIndex);
+    function clampWindowStart(size, start) {
+      if (size === 'all') return 0;
+      const maxStart = Math.max(0, monthKeys.length - size);
+      return Math.min(Math.max(0, start), maxStart);
+    }
+
+    function renderScatterChart() {
+      const size = currentWindowSize;
+      const minIndex = size === 'all' ? 0 : clampWindowStart(size, currentWindowStart);
+      const maxIndex = size === 'all' ? monthKeys.length - 1 : Math.min(minIndex + size - 1, monthKeys.length - 1);
+
+      const androidPoints = buildScatterPoints('android', minIndex, maxIndex);
+      const iosPoints = buildScatterPoints('ios', minIndex, maxIndex);
       const totalPoints = androidPoints.length + iosPoints.length;
 
       // 點越多，畫面越擁擠 → 自動縮小點的大小與不透明度，減少視覺混亂
@@ -278,8 +470,18 @@
       else if (totalPoints > 150) { pointRadius = 3; pointAlpha = 0.6; }
 
       const noteEl = document.getElementById('scatterRangeNote');
-      noteEl.textContent = '目前顯示 ' + totalPoints + ' 則評論' +
-        (rangeMonths !== 'all' ? '（近 ' + rangeMonths + ' 個月）' : '（全部期間，點數較多時建議切換到較短區間查看細節）');
+      const rangeLabel = size === 'all' ? '全部期間' : (monthKeys[minIndex] + ' ~ ' + monthKeys[maxIndex]);
+      noteEl.textContent = '目前顯示 ' + totalPoints + ' 則評論（' + rangeLabel + '）';
+
+      const prevBtn = document.getElementById('btnPrevWindow');
+      const nextBtn = document.getElementById('btnNextWindow');
+      if (size === 'all') {
+        prevBtn.disabled = true;
+        nextBtn.disabled = true;
+      } else {
+        prevBtn.disabled = minIndex <= 0;
+        nextBtn.disabled = maxIndex >= monthKeys.length - 1;
+      }
 
       if (scatterChart) {
         scatterChart.destroy();
@@ -316,7 +518,7 @@
             },
             x: {
               min: minIndex - 0.5,
-              max: monthKeys.length - 0.5,
+              max: maxIndex + 0.5,
               ticks: {
                 color: '#9aa0ac',
                 stepSize: 1,
@@ -338,38 +540,76 @@
               bodyColor: '#e8e9ed',
               padding: 10,
             },
+            zoom: {
+              pan: { enabled: false },
+              zoom: {
+                wheel: { enabled: true },
+                pinch: { enabled: true },
+                mode: 'x',
+              },
+              limits: {
+                x: { min: minIndex - 0.5, max: maxIndex + 0.5 },
+              },
+            },
           },
         },
       });
     }
 
-    document.querySelectorAll('#rangeToggleGroup .toggle-btn').forEach(btn => {
+    document.querySelectorAll('#rangeToggleGroup .toggle-btn[data-range]').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('#rangeToggleGroup .toggle-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('#rangeToggleGroup .toggle-btn[data-range]').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        const val = btn.dataset.range === 'all' ? 'all' : Number(btn.dataset.range);
-        renderScatterChart(val);
+        currentWindowSize = btn.dataset.range === 'all' ? 'all' : Number(btn.dataset.range);
+        currentWindowStart = currentWindowSize === 'all' ? 0 : Math.max(0, monthKeys.length - currentWindowSize);
+        renderScatterChart();
       });
     });
 
-    renderScatterChart(6); // 預設顯示近 6 個月
+    document.getElementById('btnResetZoom').addEventListener('click', () => {
+      if (scatterChart && scatterChart.resetZoom) scatterChart.resetZoom();
+    });
 
-    // ===== 評論 tab：清單（負評 / 全部 切換） =====
+    document.getElementById('btnPrevWindow').addEventListener('click', () => {
+      if (currentWindowSize === 'all') return;
+      currentWindowStart = clampWindowStart(currentWindowSize, currentWindowStart - currentWindowSize);
+      renderScatterChart();
+    });
+
+    document.getElementById('btnNextWindow').addEventListener('click', () => {
+      if (currentWindowSize === 'all') return;
+      currentWindowStart = clampWindowStart(currentWindowSize, currentWindowStart + currentWindowSize);
+      renderScatterChart();
+    });
+
+    currentWindowStart = Math.max(0, monthKeys.length - currentWindowSize);
+    renderScatterChart(); // 預設顯示近 6 個月
+
+    // ===== 評論 tab：清單（負評 / 全部 切換 + 平台篩選） =====
     const tbody = document.getElementById('reviewTableBody');
     const noteEl = document.getElementById('reviewListNote');
     const btnNegative = document.getElementById('btnShowNegative');
     const btnAll = document.getElementById('btnShowAll');
 
-    function renderReviewTable(mode) {
-      const sortedDesc = [...dataset.allReviewsFlat].sort((a, b) => b.timestamp - a.timestamp);
+    let currentReviewMode = 'negative';
+    let currentPlatform = 'all';
+
+    function renderReviewTable() {
+      let sortedDesc = [...dataset.allReviewsFlat].sort((a, b) => b.timestamp - a.timestamp);
+
+      if (currentPlatform !== 'all') {
+        sortedDesc = sortedDesc.filter(r => r.platform === currentPlatform);
+      }
+
       let list;
       let note;
-      if (mode === 'negative') {
+      const platformLabel = currentPlatform === 'all' ? '' : (currentPlatform === 'android' ? '（僅 Android）' : '（僅 iOS）');
+      if (currentReviewMode === 'negative') {
         list = sortedDesc.filter(r => r.score <= 2).slice(0, 30);
-        note = '顯示最近 30 則 2 星以下的評論。';
+        note = '顯示最近 30 則 2 星以下的評論' + platformLabel + '。';
       } else {
         list = sortedDesc.slice(0, 100);
-        note = '顯示最近 100 則評論（依日期排序）。';
+        note = '顯示最近 100 則評論' + platformLabel + '（依日期排序）。';
       }
 
       if (list.length === 0) {
@@ -394,15 +634,26 @@
     btnNegative.addEventListener('click', () => {
       btnNegative.classList.add('active');
       btnAll.classList.remove('active');
-      renderReviewTable('negative');
+      currentReviewMode = 'negative';
+      renderReviewTable();
     });
     btnAll.addEventListener('click', () => {
       btnAll.classList.add('active');
       btnNegative.classList.remove('active');
-      renderReviewTable('all');
+      currentReviewMode = 'all';
+      renderReviewTable();
     });
 
-    renderReviewTable('negative');
+    document.querySelectorAll('#platformToggleGroup .toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#platformToggleGroup .toggle-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentPlatform = btn.dataset.platform;
+        renderReviewTable();
+      });
+    });
+
+    renderReviewTable();
 
     // ===== 評分 tab：月平均趨勢 + 星等分佈 =====
     new Chart(document.getElementById('trendChart'), {
