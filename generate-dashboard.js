@@ -493,8 +493,8 @@ function renderHtml(dataset) {
     --border: #2a2e38;
     --text: #e8e9ed;
     --muted: #9aa0ac;
-    --android: #3ddc84;
-    --ios: #7c9fff;
+    --android: #c6f24e;
+    --ios: #FF9500;
     --neg: #ff6b6b;
   }
   * { box-sizing: border-box; }
@@ -508,34 +508,76 @@ function renderHtml(dataset) {
   h1 {
     font-size: 22px;
     margin: 0 0 4px;
-    background: linear-gradient(90deg, #00DDFF, #0BA3EF);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    color: transparent;
-    display: inline-block;
+    color: #C6F24E;
   }
   .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
   .grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 16px;
     margin-bottom: 24px;
   }
   @media (max-width: 900px) {
     .grid { grid-template-columns: repeat(2, 1fr); }
   }
+  .grid.grid-2col { grid-template-columns: repeat(2, 1fr); }
+  /* 頂部卡片：不限制每行張數，單純由左至右排列，靠內容自然換行 */
+  .grid.grid-flow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
   .card {
-    background: var(--card);
+    background: #C6F24E;
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 18px 20px;
   }
-  .card .label { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
-  .card .value { font-size: 26px; font-weight: 600; }
-  .card .value.android { color: var(--android); }
+  .card.card-square {
+    aspect-ratio: 1 / 1;
+    width: 140px;
+    flex-shrink: 0;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .card.card-square .label {
+    font-size: 14px;
+    margin-bottom: 3px;
+    line-height: 1.2;
+  }
+  .card.card-square .value {
+    font-size: 34px;
+    line-height: 1.1;
+  }
+  .card .label { color: #1a1a1a; font-size: 12px; margin-bottom: 6px; opacity: 0.7; }
+  .card .value { font-size: 26px; font-weight: 600; color: #1a1a1a; }
+  .card .value.android { color: #1a1a1a; }
   .card .value.ios { color: var(--ios); }
-  .card .value.new-count { color: var(--neg); }
+  .card .value.new-count { color: #d32f2f; }
+
+  /* App Store 累積評論數／平均星等 卡片：底色改成亮橘色，文字黑色 */
+  .card.card-ios-bg {
+    background: var(--ios);
+  }
+  .card.card-ios-bg .label,
+  .card.card-ios-bg .value,
+  .card.card-ios-bg .value.ios {
+    color: #1a1a1a;
+  }
+
+  /* 「新評論數」卡片維持深色底（跟每月評論趨勢等圖表卡片一致），
+     有新評論時用萊姆綠邊框凸顯，沒有新評論時就是普通深色卡片 */
+  .card.new-count-card {
+    background: var(--card);
+  }
+  .card.new-count-card .label { color: var(--muted); opacity: 1; }
+  .card.new-count-card .value { color: var(--text); }
+  .card.new-count-card.has-new {
+    border: 2px solid #C6F24E;
+  }
+  .card.new-count-card .value.new-count { color: #ff6b6b; }
 
   .tabs {
     display: flex;
@@ -555,8 +597,8 @@ function renderHtml(dataset) {
     font-family: inherit;
   }
   .tab-btn.active {
-    color: var(--text);
-    border-bottom-color: #7c9fff;
+    color: #C6F24E;
+    border-bottom-color: #C6F24E;
   }
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
@@ -587,8 +629,8 @@ function renderHtml(dataset) {
     font-size: 11px;
     font-weight: 600;
   }
-  .badge.android { background: rgba(61,220,132,0.15); color: var(--android); }
-  .badge.ios { background: rgba(124,159,255,0.15); color: var(--ios); }
+  .badge.android { background: rgba(198,242,78,0.15); color: var(--android); }
+  .badge.ios { background: rgba(255,149,0,0.15); color: var(--ios); }
   .score-neg { color: var(--neg); font-weight: 600; white-space: nowrap; }
   .score-pos { color: var(--text); font-weight: 600; white-space: nowrap; }
   .review-text { color: var(--text); }
@@ -674,7 +716,7 @@ function renderHtml(dataset) {
   .search-input-inline::placeholder { color: var(--muted); }
   .search-input-inline:focus {
     outline: none;
-    border-color: #7c9fff;
+    border-color: #FF9500;
   }
 
   .chart-container { position: relative; width: 100%; height: 280px; }
@@ -690,6 +732,9 @@ function renderHtml(dataset) {
     .card { padding: 12px 14px; }
     .card .label { font-size: 11px; }
     .card .value { font-size: 20px; }
+    .card.card-square { width: 108px; padding: 8px 10px; }
+    .card.card-square .label { font-size: 13px; }
+    .card.card-square .value { font-size: 24px; }
     .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; }
     .tab-btn { padding: 9px 12px; font-size: 13px; white-space: nowrap; }
     .chart-card { padding: 14px; margin-bottom: 16px; }
@@ -812,7 +857,7 @@ function renderHtml(dataset) {
   <h1>格上 GoSmart 評論追蹤 Dashboard</h1>
   <div class="subtitle" id="subtitle"></div>
 
-  <div class="grid" id="summaryCards"></div>
+  <div class="grid grid-flow" id="summaryCards"></div>
 
   <div class="tabs">
     <button class="tab-btn active" data-tab="comments">評論</button>
@@ -872,6 +917,8 @@ function renderHtml(dataset) {
   </div>
 
   <div class="tab-panel" id="tab-ratings">
+    <div class="grid grid-2col" id="ratingsSummaryCards" style="margin-bottom: 20px;"></div>
+
     <div class="chart-card">
       <h2>每月平均評分趨勢</h2>
       <div class="chart-container">
@@ -1071,27 +1118,43 @@ function renderHtml(dataset) {
         : '　｜ 與上次產出相比新增 ' + dataset.newReviewsCount.total + ' 則評論');
 
     const summaryEl = document.getElementById('summaryCards');
-    const cards = [
-      { label: 'Google Play 累積評論數', value: dataset.androidTotal, cls: 'android', decimals: 0 },
-      { label: 'Google Play 平均星等', value: dataset.androidAvgOverall, cls: 'android', decimals: 2 },
-      { label: 'Google Play 新評論數', value: dataset.newReviewsCount.android, cls: 'new-count', decimals: 0 },
-      { label: 'App Store 累積評論數', value: dataset.iosTotal, cls: 'ios', decimals: 0 },
-      { label: 'App Store 平均星等', value: dataset.iosAvgOverall, cls: 'ios', decimals: 2 },
-      { label: 'App Store 新評論數', value: dataset.newReviewsCount.ios, cls: 'new-count', decimals: 0 },
-    ];
-    summaryEl.innerHTML = cards.map(c => {
-      const isZeroNewCount = c.cls === 'new-count' && c.value === 0;
-      const style = isZeroNewCount ? ' style="opacity:0.2"' : '';
-      // 沒有有效數值時（例如尚無評分資料），直接顯示 "-"，不套用計數動畫
-      if (c.value === null || c.value === undefined || isNaN(c.value)) {
-        return '<div class="card"><div class="label">' + c.label + '</div><div class="value ' + c.cls + '"' + style + '>-</div></div>';
-      }
-      const initialText = c.decimals > 0 ? (0).toFixed(c.decimals) : '0';
-      return '<div class="card"><div class="label">' + c.label + '</div>' +
-        '<div class="value ' + c.cls + '"' + style + ' data-count-target="' + c.value + '" data-count-decimals="' + c.decimals + '">' + initialText + '</div></div>';
-    }).join('');
+    const ratingsSummaryEl = document.getElementById('ratingsSummaryCards');
 
-    // ===== 頂部卡片數字：滾動進入畫面時，從 0 跑到目標值（只觸發一次） =====
+    function renderCardGroup(containerEl, cardsList, options) {
+      const square = options && options.square;
+      containerEl.innerHTML = cardsList.map(c => {
+        const isNewCountCard = c.cls === 'new-count';
+        const isIosCard = c.cls === 'ios';
+        const hasNew = isNewCountCard && c.value > 0;
+        let cardClass = 'card';
+        if (square) cardClass += ' card-square';
+        if (isNewCountCard) cardClass += ' new-count-card' + (hasNew ? ' has-new' : '');
+        if (isIosCard) cardClass += ' card-ios-bg';
+        const isZeroNewCount = isNewCountCard && c.value === 0;
+        const style = isZeroNewCount ? ' style="opacity:0.2"' : '';
+        // 沒有有效數值時（例如尚無評分資料），直接顯示 "-"，不套用計數動畫
+        if (c.value === null || c.value === undefined || isNaN(c.value)) {
+          return '<div class="' + cardClass + '"><div class="label">' + c.label + '</div><div class="value ' + c.cls + '"' + style + '>-</div></div>';
+        }
+        const initialText = c.decimals > 0 ? (0).toFixed(c.decimals) : '0';
+        return '<div class="' + cardClass + '"><div class="label">' + c.label + '</div>' +
+          '<div class="value ' + c.cls + '"' + style + ' data-count-target="' + c.value + '" data-count-decimals="' + c.decimals + '">' + initialText + '</div></div>';
+      }).join('');
+    }
+
+    renderCardGroup(summaryEl, [
+      { label: 'Google Play<br>累積評論數', value: dataset.androidTotal, cls: 'android', decimals: 0 },
+      { label: 'App Store<br>累積評論數', value: dataset.iosTotal, cls: 'ios-lime', decimals: 0 },
+      { label: 'Google Play<br>新評論數', value: dataset.newReviewsCount.android, cls: 'new-count', decimals: 0 },
+      { label: 'App Store<br>新評論數', value: dataset.newReviewsCount.ios, cls: 'new-count', decimals: 0 },
+    ], { square: true });
+
+    renderCardGroup(ratingsSummaryEl, [
+      { label: 'Google Play<br>平均星等', value: dataset.androidAvgOverall, cls: 'android', decimals: 2 },
+      { label: 'App Store<br>平均星等', value: dataset.iosAvgOverall, cls: 'ios', decimals: 2 },
+    ]);
+
+    // ===== 卡片數字：滾動進入畫面時，從 0 跑到目標值（只觸發一次） =====
     function animateCountUp(el, target, decimals, duration) {
       const startTime = performance.now();
       function frame(now) {
@@ -1109,29 +1172,35 @@ function renderHtml(dataset) {
       requestAnimationFrame(frame);
     }
 
-    const countTargets = summaryEl.querySelectorAll('[data-count-target]');
-    if (countTargets.length > 0 && 'IntersectionObserver' in window) {
-      const countObserver = new IntersectionObserver((entries, observer) => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            countTargets.forEach(el => {
-              const target = parseFloat(el.dataset.countTarget);
-              const decimals = parseInt(el.dataset.countDecimals, 10) || 0;
-              animateCountUp(el, target, decimals, 1600);
-            });
-            observer.unobserve(entry.target);
-          }
+    function setupCountAnimation(containerEl) {
+      const countTargets = containerEl.querySelectorAll('[data-count-target]');
+      if (countTargets.length === 0) return;
+      if ('IntersectionObserver' in window) {
+        const countObserver = new IntersectionObserver((entries, observer) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              countTargets.forEach(el => {
+                const target = parseFloat(el.dataset.countTarget);
+                const decimals = parseInt(el.dataset.countDecimals, 10) || 0;
+                animateCountUp(el, target, decimals, 1600);
+              });
+              observer.unobserve(entry.target);
+            }
+          });
+        }, { threshold: 0.3 });
+        countObserver.observe(containerEl);
+      } else {
+        // 瀏覽器不支援 IntersectionObserver 時，直接顯示最終數值，不做動畫
+        countTargets.forEach(el => {
+          const target = parseFloat(el.dataset.countTarget);
+          const decimals = parseInt(el.dataset.countDecimals, 10) || 0;
+          el.textContent = decimals > 0 ? target.toFixed(decimals) : target.toLocaleString();
         });
-      }, { threshold: 0.3 });
-      countObserver.observe(summaryEl);
-    } else {
-      // 瀏覽器不支援 IntersectionObserver 時，直接顯示最終數值，不做動畫
-      countTargets.forEach(el => {
-        const target = parseFloat(el.dataset.countTarget);
-        const decimals = parseInt(el.dataset.countDecimals, 10) || 0;
-        el.textContent = decimals > 0 ? target.toFixed(decimals) : target.toLocaleString();
-      });
+      }
     }
+
+    setupCountAnimation(summaryEl);
+    setupCountAnimation(ratingsSummaryEl);
 
     // ===== Tab 切換 =====
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1158,7 +1227,7 @@ function renderHtml(dataset) {
           {
             label: '正面',
             data: dataset.categoryOrder.map(c => dataset.categoryStatsByRange.all[c].positive),
-            backgroundColor: '#3ddc84',
+            backgroundColor: '#c6f24e',
             sentimentKey: 'positive',
           },
           {
@@ -1211,7 +1280,7 @@ function renderHtml(dataset) {
 
     // ===== 情緒分析 tab：頻率 × 嚴重度矩陣 =====
     function matrixPointColor(avgScore) {
-      return avgScore <= 3 ? '#ff6b6b' : '#3ddc84';
+      return avgScore <= 3 ? '#ff6b6b' : '#c6f24e';
     }
 
     const matrixChartInstance = new Chart(document.getElementById('matrixChart'), {
@@ -1278,7 +1347,7 @@ function renderHtml(dataset) {
         labels: dataset.intentOrder,
         datasets: [{
           data: dataset.intentOrder.map(k => dataset.intentStatsByRange.all[k] || 0),
-          backgroundColor: ['#ff6b6b', '#7c9fff', '#3ddc84', '#5b6272'],
+          backgroundColor: ['#ff6b6b', '#FF9500', '#c6f24e', '#5b6272'],
         }],
       },
       options: {
@@ -1317,7 +1386,7 @@ function renderHtml(dataset) {
       data: {
         labels: dataset.stageOrder,
         datasets: [
-          { label: '正面', data: dataset.stageOrder.map(s => dataset.stageStatsByRange.all[s].positive), backgroundColor: '#3ddc84', sentimentKey: 'positive' },
+          { label: '正面', data: dataset.stageOrder.map(s => dataset.stageStatsByRange.all[s].positive), backgroundColor: '#c6f24e', sentimentKey: 'positive' },
           { label: '負面', data: dataset.stageOrder.map(s => dataset.stageStatsByRange.all[s].negative), backgroundColor: '#ff6b6b', sentimentKey: 'negative' },
         ],
       },
@@ -1365,8 +1434,8 @@ function renderHtml(dataset) {
               type: 'line',
               label: '平均星等',
               data: dataset.versionStats.map(v => v.avgScore),
-              borderColor: '#7c9fff',
-              backgroundColor: 'rgba(124,159,255,0.1)',
+              borderColor: '#e8e9ed',
+              backgroundColor: 'rgba(232,233,237,0.1)',
               yAxisID: 'y1',
               tension: 0.3,
             },
@@ -1374,7 +1443,7 @@ function renderHtml(dataset) {
               type: 'bar',
               label: '評論則數',
               data: dataset.versionStats.map(v => v.count),
-              backgroundColor: 'rgba(61,220,132,0.5)',
+              backgroundColor: 'rgba(198,242,78,0.5)',
               yAxisID: 'y',
             },
           ],
@@ -1552,14 +1621,14 @@ function renderHtml(dataset) {
             {
               label: 'Google Play',
               data: androidPoints,
-              backgroundColor: 'rgba(61,220,132,' + pointAlpha + ')',
+              backgroundColor: 'rgba(198,242,78,' + pointAlpha + ')',
               pointRadius,
               pointHoverRadius: pointRadius + 3,
             },
             {
               label: 'App Store',
               data: iosPoints,
-              backgroundColor: 'rgba(124,159,255,' + (pointAlpha + 0.05) + ')',
+              backgroundColor: 'rgba(255,149,0,' + (pointAlpha + 0.05) + ')',
               pointRadius,
               pointHoverRadius: pointRadius + 3,
             },
@@ -1804,16 +1873,16 @@ function renderHtml(dataset) {
           {
             label: 'Google Play 平均星等',
             data: dataset.monthlyStats.map(d => d.androidAvg),
-            borderColor: '#3ddc84',
-            backgroundColor: 'rgba(61,220,132,0.1)',
+            borderColor: '#c6f24e',
+            backgroundColor: 'rgba(198,242,78,0.1)',
             tension: 0.3,
             spanGaps: true,
           },
           {
             label: 'App Store 平均星等',
             data: dataset.monthlyStats.map(d => d.iosAvg),
-            borderColor: '#7c9fff',
-            backgroundColor: 'rgba(124,159,255,0.1)',
+            borderColor: '#FF9500',
+            backgroundColor: 'rgba(255,149,0,0.1)',
             tension: 0.3,
             spanGaps: true,
           },
@@ -1851,8 +1920,8 @@ function renderHtml(dataset) {
         },
       });
     }
-    distChart('androidDistChart', dataset.androidDist, '#3ddc84');
-    distChart('iosDistChart', dataset.iosDist, '#7c9fff');
+    distChart('androidDistChart', dataset.androidDist, '#c6f24e');
+    distChart('iosDistChart', dataset.iosDist, '#FF9500');
   </script>
 </body>
 </html>`;
