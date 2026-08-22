@@ -417,10 +417,11 @@ function buildDataset(dailyRuns, fullHistory, manualReviews) {
   allReviewsFlat
     .filter((r) => r.platform === 'android' && r.version)
     .forEach((r) => {
-      if (!versionMap.has(r.version)) versionMap.set(r.version, { scores: [], latestTimestamp: 0 });
+      if (!versionMap.has(r.version)) versionMap.set(r.version, { scores: [], latestTimestamp: 0, reviews: [] });
       const v = versionMap.get(r.version);
       v.scores.push(r.score);
       v.latestTimestamp = Math.max(v.latestTimestamp, r.timestamp);
+      v.reviews.push(r);
     });
   const versionStats = Array.from(versionMap.entries())
     .map(([version, v]) => ({
@@ -428,8 +429,134 @@ function buildDataset(dailyRuns, fullHistory, manualReviews) {
       count: v.scores.length,
       avgScore: v.scores.reduce((a, b) => a + b, 0) / v.scores.length,
       latestTimestamp: v.latestTimestamp,
+      reviews: v.reviews,
     }))
     .sort((a, b) => a.latestTimestamp - b.latestTimestamp);
+
+  // ===== 自動摘要（一）：版本異常警告 =====
+  // 規則式偵測，不是語意理解：比對「這個版本」跟「上一個版本」的平均星等落差，
+  // 落差夠大（>= 0.6 星）且這個版本至少有 3 則評論才視為有意義的訊號，
+  // 同時列出這個版本裡最常見的負評分類，當作「疑似原因」的提示。
+  const VERSION_MIN_COUNT = 3;
+  const VERSION_DROP_THRESHOLD = 0.6;
+  const versionAnalysis = versionStats
+    .filter((v) => v.count >= VERSION_MIN_COUNT)
+    .map((v, idx, arr) => {
+      const prev = idx > 0 ? arr[idx - 1] : null;
+      const scoreDrop = prev ? prev.avgScore - v.avgScore : null;
+      const negativeReviews = v.reviews.filter((r) => r.sentiment === 'negative');
+      const catCount = {};
+      negativeReviews.forEach((r) => {
+        r.categories.forEach((c) => {
+          if (c === OTHER_CATEGORY) return;
+          catCount[c] = (catCount[c] || 0) + 1;
+        });
+      });
+      const topCats = Object.entries(catCount)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 2)
+        .map(([cat, n]) => `${cat}（${n}則）`);
+      return {
+        version: v.version,
+        prevVersion: prev ? prev.version : null,
+        prevAvgScore: prev ? prev.avgScore : null,
+        count: v.count,
+        avgScore: v.avgScore,
+        negativeCount: negativeReviews.length,
+        negativeRatio: negativeReviews.length / v.count,
+        scoreDrop,
+        isRegression: prev !== null && scoreDrop !== null && scoreDrop >= VERSION_DROP_THRESHOLD,
+        topCats,
+      };
+    });
+  const versionRegressions = versionAnalysis.filter((v) => v.isRegression).sort((a, b) => b.scoreDrop - a.scoreDrop);
+
+  // ===== 自動摘要（二）：歷史高頻痛點 Top 5 =====
+  // 依「負評則數」排序（不是總則數），因為這裡要找的是「造成用戶不滿的沉疴」，
+  // 「其他」分類本身不夠具體、不列入排行，但保留在資料裡供你自行查閱。
+  const topPainPoints = CATEGORY_ORDER.filter((c) => c !== OTHER_CATEGORY)
+    .map((cat) => ({
+      category: cat,
+      negativeCount: categoryStats[cat].negative,
+      totalCount: categoryStats[cat].count,
+      avgScore: categoryStats[cat].count > 0 ? categoryStats[cat].scoreSum / categoryStats[cat].count : null,
+    }))
+    .filter((c) => c.negativeCount > 0)
+    .sort((a, b) => b.negativeCount - a.negativeCount)
+    .slice(0, 5);
+
+  // ===== 自動摘要（三）：突發趨勢變化（本月 vs 上月，找出負評明顯增加的分類） =====
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
+  const lastMonthEnd = monthStart; // 上個月的區間是 [lastMonthStart, monthStart)
+  const reviewsLastMonth = allReviewsFlatWithManual.filter(
+    (r) => r.timestamp >= lastMonthStart && r.timestamp < lastMonthEnd
+  );
+  const lastMonthCategoryStats = computeCategoryStats(reviewsLastMonth);
+
+  // 近 6 個日曆月的月份清單（不管有沒有資料都佔一格，供迷你走勢線使用）
+  function lastNCalendarMonths(n) {
+    const arr = [];
+    for (let i = n - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      arr.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+    return arr;
+  }
+  const recentMonths6 = lastNCalendarMonths(6);
+
+  const trendChanges = CATEGORY_ORDER.filter((c) => c !== OTHER_CATEGORY)
+    .map((cat) => {
+      const thisMonthNeg = categoryStatsByRange.month[cat].negative;
+      const lastMonthNeg = lastMonthCategoryStats[cat].negative;
+      const sparkline = recentMonths6.map(
+        (mk) => allReviewsFlatWithManual.filter((r) => r.month === mk && r.sentiment === 'negative' && r.categories.includes(cat)).length
+      );
+      return {
+        category: cat,
+        thisMonthNeg,
+        lastMonthNeg,
+        delta: thisMonthNeg - lastMonthNeg,
+        sparkline,
+      };
+    })
+    .filter((c) => c.delta > 0 && c.thisMonthNeg >= 2) // 至少要有 2 則才算有意義的訊號，避免 1 則的雜訊被誤判成趨勢
+    .sort((a, b) => b.delta - a.delta)
+    .slice(0, 5);
+
+  // ===== 字詞出現頻率排行（評論 tab 用）=====
+  // 中文沒有空格分詞，免費資源下用「雙字詞」(bigram) + 停用詞過濾來抓有意義的詞彙，
+  // 不是真正的斷詞演算法，準確度有限但不需要額外套件。
+  const SINGLE_CHAR_STOPWORDS = new Set(
+    '的了我你他她它們是就都也很太更再才呢吧嗎啊喔啦個那這之於並及或不沒有在到對為被把讓用跟和給從向以等還又要會可能就算但而且所以因為如果雖然這那些哪什怎麼樣子啦嘛耶喔唷阿'.split('')
+  );
+  const PHRASE_STOPWORDS = new Set([
+    '一個', '一下', '一直', '現在', '已經', '還是', '什麼', '怎麼', '這樣', '那樣',
+    '這個', '那個', '這些', '那些', '我們', '你們', '他們', '自己', '真的', '非常',
+    '可以', '因為', '但是', '而且', '所以', '之後', '之前', '沒有', '沒辦法', '不會',
+    '不能', '不是', '就是', '還有', '而已', '結果', '然後', '如果', '雖然', '雖說',
+  ]);
+
+  function extractWordFrequency(reviews) {
+    const freq = new Map();
+    reviews.forEach((r) => {
+      const text = r.text || '';
+      const segments = text.match(/[\u4e00-\u9fa5]+/g) || [];
+      segments.forEach((seg) => {
+        for (let i = 0; i < seg.length - 1; i++) {
+          const bigram = seg.slice(i, i + 2);
+          if (PHRASE_STOPWORDS.has(bigram)) continue;
+          if (SINGLE_CHAR_STOPWORDS.has(bigram[0]) || SINGLE_CHAR_STOPWORDS.has(bigram[1])) continue;
+          freq.set(bigram, (freq.get(bigram) || 0) + 1);
+        }
+      });
+    });
+    return Array.from(freq.entries())
+      .map(([word, count]) => ({ word, count }))
+      .filter((w) => w.count >= 2) // 只出現 1 次的字詞雜訊太多，過濾掉
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 20);
+  }
+  const wordFrequency = extractWordFrequency(allReviewsFlatWithManual);
 
   const otherCount = allReviewsFlatWithManual.filter((r) => r.categories.includes(OTHER_CATEGORY)).length;
 
@@ -467,10 +594,16 @@ function buildDataset(dailyRuns, fullHistory, manualReviews) {
     stageOrder: STAGE_ORDER,
     stageStats,
     stageStatsByRange,
-    versionStats,
+    versionStats: versionStats.map(({ reviews, ...rest }) => rest), // 前端圖表用，不含完整評論陣列避免檔案過大
     otherCount,
     dateRange: overallRange(),
     hasFullHistory: fullHistory.length > 0,
+    versionAnalysis: versionAnalysis.map(({ ...rest }) => rest),
+    versionRegressions,
+    topPainPoints,
+    trendChanges,
+    recentMonths6,
+    wordFrequency,
   };
 }
 
@@ -555,7 +688,7 @@ function renderHtml(dataset) {
   .card .value { font-size: 26px; font-weight: 600; color: #1a1a1a; }
   .card .value.android { color: #1a1a1a; }
   .card .value.ios { color: var(--ios); }
-  .card .value.new-count { color: #d32f2f; }
+  .card .value.new-count { color: #C6F24E; }
 
   /* App Store 累積評論數／平均星等 卡片：底色改成亮橘色，文字黑色 */
   .card.card-ios-bg {
@@ -574,10 +707,30 @@ function renderHtml(dataset) {
   }
   .card.new-count-card .label { color: var(--muted); opacity: 1; }
   .card.new-count-card .value { color: var(--text); }
+  @keyframes blinkBorder {
+    0%, 100% { border-color: #C6F24E; }
+    50% { border-color: rgba(198,242,78,0.25); }
+  }
   .card.new-count-card.has-new {
     border: 2px solid #C6F24E;
+    animation: blinkBorder 1.2s ease-in-out infinite;
   }
-  .card.new-count-card .value.new-count { color: #ff6b6b; }
+  .card.new-count-card .value.new-count { color: #C6F24E; }
+  @keyframes blinkNumber {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+  .value.blink-number {
+    animation: blinkNumber 1.2s ease-in-out infinite;
+  }
+  .card.card-clickable {
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .card.card-clickable:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
 
   .tabs {
     display: flex;
@@ -611,6 +764,27 @@ function renderHtml(dataset) {
     margin-bottom: 24px;
   }
   .chart-card h2 { font-size: 14px; margin: 0 0 16px; color: var(--muted); font-weight: 500; }
+  .three-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 20px;
+  }
+  @media (max-width: 900px) {
+    .three-col { grid-template-columns: 1fr; }
+  }
+  .insight-highlight {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .insight-highlight.warn { color: #ff6b6b; }
+  .insight-highlight.hot { color: #C6F24E; }
+  .insight-highlight.trend { color: #C6F24E; }
+  .insight-sub { color: var(--muted); font-size: 12px; line-height: 1.6; }
+  .insight-empty { color: var(--muted); font-size: 13px; }
+  tr.clickable-row { cursor: pointer; }
+  tr.clickable-row:hover { background: rgba(255,255,255,0.04); }
   .two-col {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -861,6 +1035,7 @@ function renderHtml(dataset) {
 
   <div class="tabs">
     <button class="tab-btn active" data-tab="comments">評論</button>
+    <button class="tab-btn" data-tab="autosummary">自動摘要</button>
     <button class="tab-btn" data-tab="sentiment">回饋洞察</button>
     <button class="tab-btn" data-tab="version">版本</button>
     <button class="tab-btn" data-tab="ratings">評分</button>
@@ -885,6 +1060,14 @@ function renderHtml(dataset) {
         <canvas id="commentScatterChart" height="110"></canvas>
       </div>
       <div class="note">用上方按鈕控制縮放程度（近3個月／近6個月／近1年／全部）；按住滑鼠左右拖曳（或觸控板左右滑動）來移動檢視區間，查看更早或更晚的資料。</div>
+    </div>
+
+    <div class="chart-card">
+      <h2>常見字詞頻率排行（不分正負評，已過濾常見口語詞/語助詞）</h2>
+      <div class="chart-container" style="height:600px;">
+        <canvas id="wordFrequencyChart"></canvas>
+      </div>
+      <div class="note">用「雙字詞」統計，不是正式的中文斷詞演算法，準確度有限，僅供快速抓語感參考。點擊長條可查看包含該字詞的評論。</div>
     </div>
 
     <div class="chart-card">
@@ -913,6 +1096,74 @@ function renderHtml(dataset) {
       </div>
       <div class="note" id="reviewListNote"></div>
       <button class="nav-btn" id="btnLoadMoreReviews" style="margin-top:10px;">載入更多評論</button>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="tab-autosummary">
+    <div class="note" style="margin-bottom: 16px;">以下內容是依規則自動比對數字產生（版本評分落差、負評分類排序、月增減比較），不是 AI 理解語意後寫出來的分析，準確度以此為前提，建議搭配下方「回饋洞察」「版本」交叉確認。</div>
+
+    <div class="three-col" style="margin-bottom: 20px;">
+      <div class="chart-card" id="insightCardRegression">
+        <h2>⚠️ 版本異常警告</h2>
+        <div id="insightRegressionBody"></div>
+        <div class="chart-container" style="height:160px; margin-top:12px;">
+          <canvas id="versionTrendChart"></canvas>
+        </div>
+      </div>
+      <div class="chart-card" id="insightCardPain">
+        <h2>🔥 歷史高頻痛點 Top 5</h2>
+        <div id="insightPainBody"></div>
+        <div class="chart-container" style="height:160px; margin-top:12px;">
+          <canvas id="painPointsChart"></canvas>
+        </div>
+      </div>
+      <div class="chart-card" id="insightCardTrend">
+        <h2>📈 突發趨勢變化（本月 vs 上月）</h2>
+        <div id="insightTrendBody"></div>
+        <div class="chart-container" style="height:160px; margin-top:12px;">
+          <canvas id="trendChangeChart"></canvas>
+        </div>
+        <div id="trendSparklineRow" style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;"></div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <h2>版本異常詳情</h2>
+      <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>版本</th><th>則數</th><th>平均星等</th><th>較前版落差</th><th>疑似原因</th></tr>
+        </thead>
+        <tbody id="versionRegressionTableBody"></tbody>
+      </table>
+      </div>
+      <div class="note">點擊任一列可查看該版本的實際負評內容。</div>
+    </div>
+
+    <div class="chart-card">
+      <h2>歷史高頻痛點詳情</h2>
+      <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>排名</th><th>分類</th><th>負評則數</th><th>總則數</th><th>平均星等</th></tr>
+        </thead>
+        <tbody id="painPointTableBody"></tbody>
+      </table>
+      </div>
+      <div class="note">點擊任一列可查看該分類的負評內容。</div>
+    </div>
+
+    <div class="chart-card">
+      <h2>趨勢變化詳情</h2>
+      <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>分類</th><th>本月負評</th><th>上月負評</th><th>增加則數</th></tr>
+        </thead>
+        <tbody id="trendChangeTableBody"></tbody>
+      </table>
+      </div>
+      <div class="note">只列出「本月至少 2 則」且比上月增加的分類，避免 1 則的雜訊被誤判成趨勢。點擊任一列可查看本月該分類的負評內容。</div>
     </div>
   </div>
 
@@ -1122,6 +1373,7 @@ function renderHtml(dataset) {
 
     function renderCardGroup(containerEl, cardsList, options) {
       const square = options && options.square;
+      const clickable = options && options.clickable;
       containerEl.innerHTML = cardsList.map(c => {
         const isNewCountCard = c.cls === 'new-count';
         const isIosCard = c.cls === 'ios';
@@ -1130,24 +1382,55 @@ function renderHtml(dataset) {
         if (square) cardClass += ' card-square';
         if (isNewCountCard) cardClass += ' new-count-card' + (hasNew ? ' has-new' : '');
         if (isIosCard) cardClass += ' card-ios-bg';
+        if (clickable && c.clickKey) cardClass += ' card-clickable';
         const isZeroNewCount = isNewCountCard && c.value === 0;
         const style = isZeroNewCount ? ' style="opacity:0.2"' : '';
+        const valueClass = 'value ' + c.cls + (hasNew ? ' blink-number' : '');
+        const clickAttr = (clickable && c.clickKey) ? ' data-click-key="' + c.clickKey + '"' : '';
         // 沒有有效數值時（例如尚無評分資料），直接顯示 "-"，不套用計數動畫
         if (c.value === null || c.value === undefined || isNaN(c.value)) {
-          return '<div class="' + cardClass + '"><div class="label">' + c.label + '</div><div class="value ' + c.cls + '"' + style + '>-</div></div>';
+          return '<div class="' + cardClass + '"' + clickAttr + '><div class="label">' + c.label + '</div><div class="' + valueClass + '"' + style + '>-</div></div>';
         }
         const initialText = c.decimals > 0 ? (0).toFixed(c.decimals) : '0';
-        return '<div class="' + cardClass + '"><div class="label">' + c.label + '</div>' +
-          '<div class="value ' + c.cls + '"' + style + ' data-count-target="' + c.value + '" data-count-decimals="' + c.decimals + '">' + initialText + '</div></div>';
+        return '<div class="' + cardClass + '"' + clickAttr + '><div class="label">' + c.label + '</div>' +
+          '<div class="' + valueClass + '"' + style + ' data-count-target="' + c.value + '" data-count-decimals="' + c.decimals + '">' + initialText + '</div></div>';
       }).join('');
     }
 
     renderCardGroup(summaryEl, [
-      { label: 'Google Play<br>累積評論數', value: dataset.androidTotal, cls: 'android', decimals: 0 },
-      { label: 'App Store<br>累積評論數', value: dataset.iosTotal, cls: 'ios-lime', decimals: 0 },
-      { label: 'Google Play<br>新評論數', value: dataset.newReviewsCount.android, cls: 'new-count', decimals: 0 },
-      { label: 'App Store<br>新評論數', value: dataset.newReviewsCount.ios, cls: 'new-count', decimals: 0 },
-    ], { square: true });
+      { label: 'Google Play<br>累積評論數', value: dataset.androidTotal, cls: 'android', decimals: 0, clickKey: 'android-total' },
+      { label: 'App Store<br>累積評論數', value: dataset.iosTotal, cls: 'ios-lime', decimals: 0, clickKey: 'ios-total' },
+      { label: 'Google Play<br>新評論數', value: dataset.newReviewsCount.android, cls: 'new-count', decimals: 0, clickKey: 'android-new' },
+      { label: 'App Store<br>新評論數', value: dataset.newReviewsCount.ios, cls: 'new-count', decimals: 0, clickKey: 'ios-new' },
+    ], { square: true, clickable: true });
+
+    // ===== 頂部四張卡片可點擊，直接跳出評論抽屜（跟其他圖表的點擊互動邏輯一致） =====
+    const cardClickMap = {
+      'android-total': {
+        title: 'Google Play 全部評論',
+        getReviews: () => dataset.allReviewsFlat.filter(r => r.platform === 'android'),
+      },
+      'ios-total': {
+        title: 'App Store 全部評論',
+        getReviews: () => dataset.allReviewsFlat.filter(r => r.platform === 'ios'),
+      },
+      'android-new': {
+        title: 'Google Play 新增評論',
+        getReviews: () => (dataset.newReviewsList && dataset.newReviewsList.android) || [],
+      },
+      'ios-new': {
+        title: 'App Store 新增評論',
+        getReviews: () => (dataset.newReviewsList && dataset.newReviewsList.ios) || [],
+      },
+    };
+    summaryEl.addEventListener('click', (e) => {
+      const card = e.target.closest('[data-click-key]');
+      if (!card) return;
+      const cfg = cardClickMap[card.dataset.clickKey];
+      if (!cfg) return;
+      const reviews = cfg.getReviews();
+      openReviewDrawer(cfg.title, '共 ' + reviews.length + ' 則', reviews);
+    });
 
     renderCardGroup(ratingsSummaryEl, [
       { label: 'Google Play<br>平均星等', value: dataset.androidAvgOverall, cls: 'android', decimals: 2 },
@@ -1209,6 +1492,15 @@ function renderHtml(dataset) {
         document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
         document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+        // 圖表在「隱藏分頁」裡建立時，Chart.js 會算出錯誤尺寸；
+        // 分頁切換、容器變成可見後，強制所有圖表重新計算一次正確尺寸，避免拉長/變形。
+        requestAnimationFrame(() => {
+          if (window.Chart && Chart.instances) {
+            Object.values(Chart.instances).forEach(c => {
+              try { c.resize(); } catch (e) {}
+            });
+          }
+        });
       });
     });
 
@@ -1864,6 +2156,317 @@ function renderHtml(dataset) {
 
     renderReviewTable();
 
+    // ===== 評論 tab：字詞頻率排行 =====
+    (function renderWordFrequency() {
+      const words = dataset.wordFrequency || [];
+      const canvas = document.getElementById('wordFrequencyChart');
+      if (words.length === 0) {
+        canvas.parentElement.innerHTML = '<div class="insight-empty">目前資料量不足以統計出有意義的字詞頻率。</div>';
+        return;
+      }
+      new Chart(canvas, {
+        type: 'bar',
+        data: {
+          labels: words.map(w => w.word),
+          datasets: [{
+            data: words.map(w => w.count),
+            backgroundColor: '#C6F24E',
+          }],
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: { ticks: { color: '#9aa0ac' }, grid: { color: '#2a2e38' } },
+            y: { ticks: { color: '#9aa0ac', autoSkip: false }, grid: { display: false } },
+          },
+          plugins: { legend: { display: false } },
+          onClick: (evt, elements) => {
+            if (!elements.length) return;
+            const w = words[elements[0].index];
+            const matched = dataset.allReviewsFlat.filter(r => (r.text || '').includes(w.word));
+            openReviewDrawer('包含「' + w.word + '」的評論', '共 ' + matched.length + ' 則', matched);
+          },
+        },
+      });
+    })();
+
+    // ===== 自動摘要 tab：規則式洞察 =====
+    (function renderAutoSummary() {
+      const regressions = dataset.versionRegressions || [];
+      const painPoints = dataset.topPainPoints || [];
+      const trends = dataset.trendChanges || [];
+
+      const CATEGORY_ICONS = {
+        '定車相關': '🗓️', '取車相關': '🔑', '還車相關': '🚗', '客服': '🎧',
+        '審核': '📋', '付款': '💳', '站點與車輛數': '📍', '停權': '🚫',
+        '基本資料': '🪪', '系統': '⚙️', '車輛設備': '🔧', '優惠碼/優惠券': '🎟️',
+        '帳號': '👤', '車損拍照': '📸', '通知': '🔔', '軟體更新': '🔄',
+        'icon設計': '🎨', '投保': '🛡️', '搜尋': '🔍', '更改密碼': '🔒',
+        '共同承租人': '👥', '其他': '📦',
+      };
+      const iconFor = (cat) => CATEGORY_ICONS[cat] || '📌';
+
+      // --- 卡片一：版本異常警告 ---
+      const regressionBody = document.getElementById('insightRegressionBody');
+      if (regressions.length === 0) {
+        regressionBody.innerHTML = '<div class="insight-empty">目前沒有偵測到明顯的版本評分驟降。</div>';
+      } else {
+        const top = regressions[0];
+        regressionBody.innerHTML =
+          '<div class="insight-highlight warn">版本 ' + top.version + '</div>' +
+          '<div class="insight-sub">平均星等較前一版下降 ' + top.scoreDrop.toFixed(2) + ' 分（' + top.avgScore.toFixed(2) + ' ★，共 ' + top.count + ' 則）' +
+          (top.topCats.length ? '，主要負評類型：' + top.topCats.join('、') : '') + '</div>' +
+          (regressions.length > 1 ? '<div class="insight-sub" style="margin-top:6px;">另外還有 ' + (regressions.length - 1) + ' 個版本也被標記，詳見下方表格。</div>' : '');
+      }
+
+      // --- 卡片二：歷史高頻痛點 ---
+      const painBody = document.getElementById('insightPainBody');
+      if (painPoints.length === 0) {
+        painBody.innerHTML = '<div class="insight-empty">目前沒有足夠資料歸納出痛點排行。</div>';
+      } else {
+        const top = painPoints[0];
+        painBody.innerHTML =
+          '<div class="insight-highlight hot">' + top.category + '</div>' +
+          '<div class="insight-sub">歷史累積 ' + top.negativeCount + ' 則負評（平均 ' + top.avgScore.toFixed(2) + ' ★），是目前最該優先排入 Roadmap 的問題。</div>' +
+          '<div class="insight-sub" style="margin-top:6px;">Top 5：' + painPoints.map(p => p.category).join('、') + '</div>';
+      }
+
+      // --- 卡片三：突發趨勢變化 ---
+      const trendBody = document.getElementById('insightTrendBody');
+      if (trends.length === 0) {
+        trendBody.innerHTML = '<div class="insight-empty">本月跟上月相比，沒有偵測到明顯增加的負評類型。</div>';
+      } else {
+        const top = trends[0];
+        trendBody.innerHTML =
+          '<div class="insight-highlight trend">' + top.category + ' +' + top.delta + '</div>' +
+          '<div class="insight-sub">本月已有 ' + top.thisMonthNeg + ' 則負評（上月 ' + top.lastMonthNeg + ' 則），是本月新浮現或惡化的方向。</div>' +
+          (trends.length > 1 ? '<div class="insight-sub" style="margin-top:6px;">其他上升類型：' + trends.slice(1).map(t => t.category + ' +' + t.delta).join('、') + '</div>' : '');
+      }
+
+      // --- 詳情表格：版本異常 ---
+      const versionTbody = document.getElementById('versionRegressionTableBody');
+      if (regressions.length === 0) {
+        versionTbody.innerHTML = '<tr><td colspan="5" class="insight-empty">目前沒有被標記的版本。</td></tr>';
+      } else {
+        versionTbody.innerHTML = regressions.map(v => \`
+          <tr class="clickable-row" data-version="\${v.version}">
+            <td>\${v.version}</td>
+            <td>\${v.count}</td>
+            <td class="score-neg">\${v.avgScore.toFixed(2)} ★</td>
+            <td class="score-neg">-\${v.scoreDrop.toFixed(2)}</td>
+            <td>\${v.topCats.join('、') || '-'}</td>
+          </tr>
+        \`).join('');
+        versionTbody.querySelectorAll('tr[data-version]').forEach(row => {
+          row.addEventListener('click', () => {
+            const version = row.dataset.version;
+            const matched = dataset.allReviewsFlat.filter(r => r.platform === 'android' && r.version === version && r.sentiment === 'negative');
+            openReviewDrawer('版本 ' + version + ' 的負評', '共 ' + matched.length + ' 則', matched);
+          });
+        });
+      }
+
+      // --- 詳情表格：高頻痛點 ---
+      const painTbody = document.getElementById('painPointTableBody');
+      if (painPoints.length === 0) {
+        painTbody.innerHTML = '<tr><td colspan="5" class="insight-empty">目前沒有資料。</td></tr>';
+      } else {
+        painTbody.innerHTML = painPoints.map((p, idx) => \`
+          <tr class="clickable-row" data-category="\${p.category}">
+            <td>#\${idx + 1}</td>
+            <td>\${iconFor(p.category)} \${p.category}</td>
+            <td class="score-neg">\${p.negativeCount}</td>
+            <td>\${p.totalCount}</td>
+            <td>\${p.avgScore !== null ? p.avgScore.toFixed(2) + ' ★' : '-'}</td>
+          </tr>
+        \`).join('');
+        painTbody.querySelectorAll('tr[data-category]').forEach(row => {
+          row.addEventListener('click', () => {
+            const category = row.dataset.category;
+            const matched = dataset.allReviewsFlat.filter(r => r.categories.includes(category) && r.sentiment === 'negative');
+            openReviewDrawer(category + ' 的歷史負評', '共 ' + matched.length + ' 則', matched);
+          });
+        });
+      }
+
+      // --- 詳情表格：趨勢變化 ---
+      const trendTbody = document.getElementById('trendChangeTableBody');
+      if (trends.length === 0) {
+        trendTbody.innerHTML = '<tr><td colspan="4" class="insight-empty">目前沒有偵測到明顯趨勢。</td></tr>';
+      } else {
+        trendTbody.innerHTML = trends.map(t => \`
+          <tr class="clickable-row" data-category="\${t.category}">
+            <td>\${iconFor(t.category)} \${t.category}</td>
+            <td class="score-neg">\${t.thisMonthNeg}</td>
+            <td>\${t.lastMonthNeg}</td>
+            <td class="score-neg">+\${t.delta}</td>
+          </tr>
+        \`).join('');
+        trendTbody.querySelectorAll('tr[data-category]').forEach(row => {
+          row.addEventListener('click', () => {
+            const category = row.dataset.category;
+            const matched = dataset.reviewsByRange.month.filter(r => r.categories.includes(category) && r.sentiment === 'negative');
+            openReviewDrawer(category + '（本月）', '共 ' + matched.length + ' 則', matched);
+          });
+        });
+      }
+
+      // --- 圖表一：版本 × 平均星等 折線圖（異常版本用紅點標示） ---
+      const versionAnalysis = dataset.versionAnalysis || [];
+      if (versionAnalysis.length > 0) {
+        new Chart(document.getElementById('versionTrendChart'), {
+          type: 'line',
+          data: {
+            labels: versionAnalysis.map(v => v.version),
+            datasets: [{
+              label: '平均星等',
+              data: versionAnalysis.map(v => v.avgScore),
+              borderColor: '#C6F24E',
+              backgroundColor: 'rgba(198,242,78,0.08)',
+              tension: 0.3,
+              pointRadius: versionAnalysis.map(v => v.isRegression ? 6 : 3),
+              pointBackgroundColor: versionAnalysis.map(v => v.isRegression ? '#ff6b6b' : '#C6F24E'),
+              pointBorderColor: versionAnalysis.map(v => v.isRegression ? '#ff6b6b' : '#C6F24E'),
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              y: { min: 0, max: 5, ticks: { color: '#9aa0ac', font: { size: 10 } }, grid: { color: '#2a2e38' } },
+              x: { ticks: { color: '#9aa0ac', font: { size: 9 }, maxRotation: 60, minRotation: 45 }, grid: { display: false } },
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => {
+                    const v = versionAnalysis[ctx.dataIndex];
+                    const lines = ['平均 ' + v.avgScore.toFixed(2) + ' ★（' + v.count + ' 則）'];
+                    if (v.isRegression) lines.push('⚠️ 較前版下降 ' + v.scoreDrop.toFixed(2) + ' 分');
+                    return lines;
+                  },
+                },
+              },
+            },
+            onClick: (evt, elements) => {
+              if (!elements.length) return;
+              const v = versionAnalysis[elements[0].index];
+              const matched = dataset.allReviewsFlat.filter(r => r.platform === 'android' && r.version === v.version);
+              openReviewDrawer('版本 ' + v.version, '共 ' + matched.length + ' 則', matched);
+            },
+          },
+        });
+      }
+
+      // --- 圖表二：歷史高頻痛點 橫向長條圖 ---
+      if (painPoints.length > 0) {
+        new Chart(document.getElementById('painPointsChart'), {
+          type: 'bar',
+          data: {
+            labels: painPoints.map(p => iconFor(p.category) + ' ' + p.category),
+            datasets: [{
+              data: painPoints.map(p => p.negativeCount),
+              backgroundColor: painPoints.map((p, i) => i === 0 ? '#C6F24E' : 'rgba(198,242,78,' + (0.85 - i * 0.12) + ')'),
+            }],
+          },
+          options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: { ticks: { color: '#9aa0ac', font: { size: 10 } }, grid: { color: '#2a2e38' } },
+              y: { ticks: { color: '#9aa0ac', font: { size: 11 } }, grid: { display: false } },
+            },
+            plugins: { legend: { display: false } },
+            onClick: (evt, elements) => {
+              if (!elements.length) return;
+              const p = painPoints[elements[0].index];
+              const matched = dataset.allReviewsFlat.filter(r => r.categories.includes(p.category) && r.sentiment === 'negative');
+              openReviewDrawer(p.category + ' 的歷史負評', '共 ' + matched.length + ' 則', matched);
+            },
+          },
+        });
+      }
+
+      // --- 圖表三：本月 vs 上月 對比長條圖 ---
+      if (trends.length > 0) {
+        new Chart(document.getElementById('trendChangeChart'), {
+          type: 'bar',
+          data: {
+            labels: trends.map(t => t.category),
+            datasets: [
+              { label: '上月', data: trends.map(t => t.lastMonthNeg), backgroundColor: '#5b6272' },
+              { label: '本月', data: trends.map(t => t.thisMonthNeg), backgroundColor: '#C6F24E' },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: { ticks: { color: '#9aa0ac', font: { size: 10 } }, grid: { display: false } },
+              y: { ticks: { color: '#9aa0ac', font: { size: 10 } }, grid: { color: '#2a2e38' } },
+            },
+            plugins: { legend: { labels: { color: '#e8e9ed', font: { size: 10 } } } },
+            onClick: (evt, elements) => {
+              if (!elements.length) return;
+              const t = trends[elements[0].index];
+              const matched = dataset.reviewsByRange.month.filter(r => r.categories.includes(t.category) && r.sentiment === 'negative');
+              openReviewDrawer(t.category + '（本月）', '共 ' + matched.length + ' 則', matched);
+            },
+          },
+        });
+      }
+
+      // --- 圖表四：每個上升分類的近 6 個月迷你走勢線（sparkline） ---
+      const sparklineRow = document.getElementById('trendSparklineRow');
+      if (trends.length > 0 && dataset.recentMonths6) {
+        const months6 = dataset.recentMonths6;
+        sparklineRow.innerHTML = trends.map((t, i) =>
+          '<div style="flex:1; min-width:110px; background:#0f1115; border:1px solid #2a2e38; border-radius:8px; padding:8px;">' +
+            '<div style="font-size:11px; color:#9aa0ac; margin-bottom:4px;">' + iconFor(t.category) + ' ' + t.category + '</div>' +
+            '<div style="position:relative; width:100%; height:44px;"><canvas id="sparkline-' + i + '"></canvas></div>' +
+          '</div>'
+        ).join('');
+
+        trends.forEach((t, i) => {
+          new Chart(document.getElementById('sparkline-' + i), {
+            type: 'line',
+            data: {
+              labels: months6,
+              datasets: [{
+                data: t.sparkline,
+                borderColor: '#C6F24E',
+                backgroundColor: 'rgba(198,242,78,0.15)',
+                fill: true,
+                tension: 0.35,
+                pointRadius: 0,
+                borderWidth: 2,
+              }],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: { x: { display: false }, y: { display: false, min: 0 } },
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  callbacks: {
+                    title: (items) => months6[items[0].dataIndex],
+                    label: (ctx) => ctx.parsed.y + ' 則負評',
+                  },
+                },
+              },
+            },
+          });
+        });
+      } else {
+        sparklineRow.innerHTML = '';
+      }
+    })();
+
     // ===== 評分 tab：月平均趨勢 + 星等分佈 =====
     new Chart(document.getElementById('trendChart'), {
       type: 'line',
@@ -1971,6 +2574,10 @@ function main() {
     isFirstRun,
   };
   dataset.newReviewsSample = [...newReviews].sort((a, b) => b.timestamp - a.timestamp).slice(0, 10);
+  dataset.newReviewsList = {
+    android: newReviews.filter((r) => r.platform === 'android'),
+    ios: newReviews.filter((r) => r.platform === 'ios'),
+  };
 
   saveSnapshot(currentKeys);
 
