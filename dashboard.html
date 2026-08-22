@@ -386,6 +386,22 @@
     color: var(--muted);
   }
   .drawer-review-text { font-size: 13px; line-height: 1.6; }
+  .star-btn {
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 16px;
+    line-height: 1;
+    user-select: none;
+    transition: color 0.15s ease, transform 0.1s ease;
+  }
+  .star-btn:hover { transform: scale(1.15); }
+  .star-btn.star-filled { color: #C6F24E; }
+  .star-btn-drawer {
+    position: absolute;
+    top: 14px;
+    right: 0;
+    font-size: 18px;
+  }
 
   @media (max-width: 640px) {
     .review-drawer {
@@ -427,6 +443,7 @@
     <button class="tab-btn" data-tab="sentiment">回饋洞察</button>
     <button class="tab-btn" data-tab="version">版本</button>
     <button class="tab-btn" data-tab="ratings">評分</button>
+    <button class="tab-btn" data-tab="favorites">收藏</button>
   </div>
 
   <div class="tab-panel active" id="tab-comments">
@@ -477,7 +494,7 @@
       <div class="table-wrap">
       <table>
         <thead>
-          <tr><th>平台</th><th>日期</th><th>星等</th><th>內容</th><th>處理進度</th></tr>
+          <tr><th>平台</th><th>日期</th><th>星等</th><th>內容</th><th></th><th>處理進度</th></tr>
         </thead>
         <tbody id="reviewTableBody"></tbody>
       </table>
@@ -665,7 +682,7 @@
       <div class="table-wrap">
       <table>
         <thead>
-          <tr><th>平台</th><th>日期</th><th>星等</th><th>內容</th></tr>
+          <tr><th>平台</th><th>日期</th><th>星等</th><th>內容</th><th></th></tr>
         </thead>
         <tbody id="categoryDetailTableBody"></tbody>
       </table>
@@ -681,6 +698,24 @@
         <canvas id="versionChart" height="100"></canvas>
       </div>
       <div class="note">若某個版本後評分明顯下滑，通常代表該次改版造成體驗劣化，可以回頭比對該版本的更新內容。滑鼠移到長條上可看該版本的則數與平均星等。</div>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="tab-favorites">
+    <div class="chart-card">
+      <div class="list-header">
+        <h2 style="margin:0">收藏的評論</h2>
+      </div>
+      <div class="note" style="margin-bottom:12px;">收藏狀態存在這台電腦的瀏覽器裡，不會同步給其他人、換瀏覽器或清除瀏覽器資料後會消失。</div>
+      <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>平台</th><th>日期</th><th>星等</th><th>內容</th><th></th></tr>
+        </thead>
+        <tbody id="favoritesTableBody"></tbody>
+      </table>
+      </div>
+      <div class="note" id="favoritesNote"></div>
     </div>
   </div>
 
@@ -704,7 +739,8 @@
 
     function renderDrawerReview(r) {
       const platformLabel = r.platform === 'android' ? 'Android' : 'iOS';
-      return '<div class="drawer-review-item">' +
+      return '<div class="drawer-review-item" style="position:relative;">' +
+        starButtonHtml(r.key, 'star-btn-drawer') +
         '<div class="drawer-review-meta">' +
           '<span class="badge ' + r.platform + '">' + platformLabel + '</span>' +
           '<span>' + r.date + '</span>' +
@@ -737,6 +773,13 @@
 
     drawerOverlay.addEventListener('click', closeReviewDrawer);
     document.getElementById('drawerCloseBtn').addEventListener('click', closeReviewDrawer);
+    drawerBody.addEventListener('click', (e) => {
+      const star = e.target.closest('.star-btn');
+      if (!star) return;
+      e.stopPropagation();
+      toggleFavoriteAndRefreshStars(star.dataset.starKey);
+      if (typeof refreshFavoritesTabIfActive === 'function') refreshFavoritesTabIfActive();
+    });
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closeReviewDrawer();
     });
@@ -1189,7 +1232,7 @@
       const noteEl = document.getElementById('categoryDetailNote');
 
       if (list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="color:#9aa0ac">目前沒有符合條件的評論</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="color:#9aa0ac">目前沒有符合條件的評論</td></tr>';
       } else {
         tbody.innerHTML = list.map(r => `
           <tr>
@@ -1201,11 +1244,19 @@
               <div class="review-text">${(r.text || '').slice(0, 200)}</div>
               <div class="review-meta">${r.userName || ''}${r.version ? '　版本 ' + r.version : ''}</div>
             </td>
+            <td>${starButtonHtml(r.key)}</td>
           </tr>
         `).join('');
       }
       noteEl.textContent = '「' + category + '」分類，最多顯示 50 則（依日期排序）。';
     }
+
+    document.getElementById('categoryDetailTableBody').addEventListener('click', (e) => {
+      const star = e.target.closest('.star-btn');
+      if (!star) return;
+      toggleFavoriteAndRefreshStars(star.dataset.starKey);
+      if (typeof refreshFavoritesTabIfActive === 'function') refreshFavoritesTabIfActive();
+    });
 
     categorySelect.addEventListener('change', renderCategoryDetail);
     intentSelect.addEventListener('change', renderCategoryDetail);
@@ -1431,6 +1482,102 @@
       }
     }
 
+    // ===== 收藏功能：同樣存在瀏覽器的 localStorage 裡（只存在這台電腦/這個瀏覽器，不會同步給其他人） =====
+    const FAVORITE_PREFIX = 'gosmart-review-favorite:';
+
+    function isFavorited(key) {
+      try {
+        return localStorage.getItem(FAVORITE_PREFIX + key) === '1';
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function setFavorited(key, value) {
+      try {
+        if (value) localStorage.setItem(FAVORITE_PREFIX + key, '1');
+        else localStorage.removeItem(FAVORITE_PREFIX + key);
+      } catch (e) {
+        // 靜默失敗
+      }
+    }
+
+    function getFavoriteKeys() {
+      const keys = [];
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.indexOf(FAVORITE_PREFIX) === 0) keys.push(k.slice(FAVORITE_PREFIX.length));
+        }
+      } catch (e) {
+        // 靜默失敗
+      }
+      return keys;
+    }
+
+    function starButtonHtml(key, extraClass) {
+      const filled = isFavorited(key);
+      return '<span class="star-btn' + (filled ? ' star-filled' : '') + (extraClass ? ' ' + extraClass : '') +
+        '" data-star-key="' + key + '" title="收藏">' + (filled ? '★' : '☆') + '</span>';
+    }
+
+    function toggleFavoriteAndRefreshStars(key) {
+      const newState = !isFavorited(key);
+      setFavorited(key, newState);
+      document.querySelectorAll('[data-star-key="' + key + '"]').forEach(el => {
+        el.classList.toggle('star-filled', newState);
+        el.textContent = newState ? '★' : '☆';
+      });
+      return newState;
+    }
+
+    // ===== 收藏 tab：渲染實際內容 =====
+    const reviewsByKey = new Map(dataset.allReviewsFlat.map(r => [r.key, r]));
+
+    function renderFavoritesTab() {
+      const favTbody = document.getElementById('favoritesTableBody');
+      const favNote = document.getElementById('favoritesNote');
+      if (!favTbody) return;
+
+      const keys = getFavoriteKeys();
+      const favReviews = keys
+        .map(k => reviewsByKey.get(k))
+        .filter(Boolean)
+        .sort((a, b) => b.timestamp - a.timestamp);
+
+      if (favReviews.length === 0) {
+        favTbody.innerHTML = '<tr><td colspan="5" style="color:#9aa0ac">目前沒有收藏的評論，點擊評論旁邊的星號即可加入收藏。</td></tr>';
+      } else {
+        favTbody.innerHTML = favReviews.map(r => `
+          <tr>
+            <td><span class="badge ${r.platform}">${r.platform === 'android' ? 'Android' : 'iOS'}</span></td>
+            <td>${r.date}</td>
+            <td class="${r.score <= 3 ? 'score-neg' : 'score-pos'}">${r.score} ★</td>
+            <td>
+              ${r.title ? '<div class="review-text"><b>' + r.title + '</b></div>' : ''}
+              <div class="review-text">${(r.text || '').slice(0, 200)}</div>
+              <div class="review-meta">${r.userName || ''}</div>
+            </td>
+            <td>${starButtonHtml(r.key)}</td>
+          </tr>
+        `).join('');
+      }
+      favNote.textContent = '共收藏 ' + favReviews.length + ' 則評論。';
+    }
+
+    function refreshFavoritesTabIfActive() {
+      renderFavoritesTab();
+    }
+
+    document.getElementById('favoritesTableBody').addEventListener('click', (e) => {
+      const star = e.target.closest('.star-btn');
+      if (!star) return;
+      toggleFavoriteAndRefreshStars(star.dataset.starKey);
+      renderFavoritesTab(); // 取消收藏後要立刻從清單移除
+    });
+
+    renderFavoritesTab(); // 頁面載入時先渲染一次（如果這個瀏覽器之前就收藏過評論）
+
     function renderReviewTable() {
       let sortedDesc = [...dataset.allReviewsFlat].sort((a, b) => b.timestamp - a.timestamp);
 
@@ -1465,7 +1612,7 @@
       }
 
       if (list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="color:#9aa0ac">目前沒有符合條件的評論</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="color:#9aa0ac">目前沒有符合條件的評論</td></tr>';
       } else {
         tbody.innerHTML = list.map(r => `
           <tr>
@@ -1477,6 +1624,7 @@
               <div class="review-text">${(r.text || '').slice(0, 200)}</div>
               <div class="review-meta">${r.userName || ''}</div>
             </td>
+            <td>${starButtonHtml(r.key)}</td>
             <td>
               <select class="select-input status-select" data-review-key="${r.key}">
                 ${STATUS_OPTIONS.map(opt => '<option value="' + opt + '"' + (getReviewStatus(r.key) === opt ? ' selected' : '') + '>' + opt + '</option>').join('')}
@@ -1505,12 +1653,18 @@
       renderReviewTable();
     }
 
-    // 用事件委派監聽狀態下拉選單的變更，因為每次 render 都會整個重建 tbody 內容
+    // 用事件委派監聽狀態下拉選單的變更、以及星星收藏點擊，因為每次 render 都會整個重建 tbody 內容
     tbody.addEventListener('change', (e) => {
       if (e.target.classList.contains('status-select')) {
         setReviewStatus(e.target.dataset.reviewKey, e.target.value);
         applyStatusColor(e.target, e.target.value);
       }
+    });
+    tbody.addEventListener('click', (e) => {
+      const star = e.target.closest('.star-btn');
+      if (!star) return;
+      toggleFavoriteAndRefreshStars(star.dataset.starKey);
+      if (typeof refreshFavoritesTabIfActive === 'function') refreshFavoritesTabIfActive();
     });
 
     btnLoadMore.addEventListener('click', () => {
