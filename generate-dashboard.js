@@ -286,7 +286,33 @@ function buildDataset(dailyRuns, fullHistory, manualReviews) {
   // - 沒有日期的：timestamp 設為 0，這樣「今年/本月/本週」篩選會自動排除它們（時間戳記太舊，
   //   不會 >= 篩選門檻），但「全部」範圍、回饋洞察、評論清單仍會包含它們；
   //   月份設為 null，月趨勢圖（散佈圖）會明確跳過，不會被誤判成落在第一個月份。
-  const manualFlat = manualReviews.map((r, idx) => {
+  //
+  // 去重：手動資料跟爬蟲資料可能觀察到同一則評論（例如評論當時還留在商店上，剛好被爬蟲也抓到）。
+  // 用「去除空白後的文字內容 + 平台」比對，跟已經爬到的資料完全相同的手動項目會被自動排除，
+  // 避免同一則評論被算兩次。
+  function normalizeForDedup(t) {
+    return (t || '').replace(/\s+/g, '').trim();
+  }
+  const scrapedTextsByPlatform = {
+    android: new Set(allReviewsFlat.filter((r) => r.platform === 'android').map((r) => normalizeForDedup(r.text))),
+    ios: new Set(allReviewsFlat.filter((r) => r.platform === 'ios').map((r) => normalizeForDedup(r.text))),
+  };
+  const manualDedupSkipped = [];
+  const manualReviewsDeduped = manualReviews.filter((r) => {
+    const norm = normalizeForDedup(r.text);
+    const isDupe = norm && scrapedTextsByPlatform[r.platform] && scrapedTextsByPlatform[r.platform].has(norm);
+    if (isDupe) manualDedupSkipped.push(r);
+    return !isDupe;
+  });
+  if (manualDedupSkipped.length > 0) {
+    console.log(
+      `提示：手動補充資料中有 ${manualDedupSkipped.length} 則跟爬蟲資料文字內容完全相同，已自動排除避免重複計算（${manualDedupSkipped
+        .map((r) => r.id)
+        .join(', ')}）。`
+    );
+  }
+
+  const manualFlat = manualReviewsDeduped.map((r, idx) => {
     const text = r.text || '';
     const categories = categorizeText(text);
     let timestamp = 0;
@@ -576,6 +602,8 @@ function buildDataset(dailyRuns, fullHistory, manualReviews) {
     iosDist: ratingDist(allIos),
     androidTotal: allAndroid.length,
     iosTotal: allIos.length,
+    actualAndroidTotal: allReviewsFlatWithManual.filter((r) => r.platform === 'android').length, // 含手動補充資料的真實總數
+    actualIosTotal: allReviewsFlatWithManual.filter((r) => r.platform === 'ios').length, // 含手動補充資料的真實總數
     androidAvgOverall: allAndroid.filter((r) => r.score !== null).length
       ? allAndroid.reduce((a, b) => a + (b.score || 0), 0) / allAndroid.filter((r) => r.score !== null).length
       : null,
@@ -617,7 +645,7 @@ function renderHtml(dataset) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>格上 GoSmart 評論追蹤 Dashboard</title>
+<title>阿葛格 評論追蹤 Dashboard</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
@@ -689,6 +717,21 @@ function renderHtml(dataset) {
   .card.card-square .value {
     font-size: 34px;
     line-height: 1.1;
+  }
+  .card-sub {
+    margin-top: 6px;
+    line-height: 1.3;
+  }
+  .card-sub-label {
+    font-size: 9px;
+    color: #1a1a1a;
+    opacity: 0.6;
+  }
+  .card-sub-value {
+    font-size: 11px;
+    font-weight: 600;
+    color: #1a1a1a;
+    opacity: 0.85;
   }
   .card .label { color: #1a1a1a; font-size: 12px; margin-bottom: 6px; opacity: 0.7; }
   .card .value { font-size: 26px; font-weight: 600; color: #1a1a1a; }
@@ -797,15 +840,15 @@ function renderHtml(dataset) {
     transition: width 0.35s ease;
     flex-shrink: 0;
   }
-  .detail-grid.expanded-version #versionDetailCard { width: 100%; }
+  .detail-grid.expanded-version #versionDetailCard { width: 100%; order: -1; }
   .detail-grid.expanded-version #painDetailCard,
   .detail-grid.expanded-version #trendDetailCard { width: calc(50% - 10px); }
 
-  .detail-grid.expanded-pain #painDetailCard { width: 100%; }
+  .detail-grid.expanded-pain #painDetailCard { width: 100%; order: -1; }
   .detail-grid.expanded-pain #versionDetailCard,
   .detail-grid.expanded-pain #trendDetailCard { width: calc(50% - 10px); }
 
-  .detail-grid.expanded-trend #trendDetailCard { width: 100%; }
+  .detail-grid.expanded-trend #trendDetailCard { width: 100%; order: -1; }
   .detail-grid.expanded-trend #versionDetailCard,
   .detail-grid.expanded-trend #painDetailCard { width: calc(50% - 10px); }
 
@@ -815,8 +858,14 @@ function renderHtml(dataset) {
   .detail-card {
     cursor: pointer;
     user-select: none;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
   }
-  .detail-card:hover { border-color: #454b58; }
+  .detail-card.is-first { order: -1; }
+  .detail-card:hover {
+    border-color: #454b58;
+    box-shadow: 0 0 24px rgba(198, 242, 78, 0.15);
+  }
+  .detail-card:hover h2 { color: #C6F24E; transition: color 0.2s ease; }
   .detail-card table,
   .detail-card tr.clickable-row {
     cursor: pointer;
@@ -860,8 +909,27 @@ function renderHtml(dataset) {
   .insight-card {
     cursor: pointer;
     user-select: none;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
   }
-  .insight-card:hover { border-color: #454b58; }
+  .insight-card.is-first { order: -1; }
+  .insight-card:hover {
+    border-color: #454b58;
+    box-shadow: 0 0 24px rgba(198, 242, 78, 0.15);
+  }
+  .insight-card:hover h2 { color: #C6F24E; transition: color 0.2s ease; }
+
+  /* 說明文字（列點式）預設隱藏，只有該區塊展開時才顯示，避免收合狀態下版面被說明文字撐開 */
+  .expand-only-note { display: none; }
+  ul.expand-only-note { margin: 8px 0 0; padding-left: 18px; }
+  .expand-only-note li { margin-bottom: 4px; }
+  .expand-only-note li:last-child { margin-bottom: 0; }
+  .expand-only-note ul { margin: 6px 0 0; padding-left: 18px; }
+  .insight-grid.expanded-category #categoryInsightCard .expand-only-note,
+  .insight-grid.expanded-stage #stageInsightCard .expand-only-note,
+  .insight-grid.expanded-matrix #matrixInsightCard .expand-only-note,
+  .insight-grid.expanded-intent #intentInsightCard .expand-only-note {
+    display: block;
+  }
 
   .insight-highlight {
     font-size: 22px;
@@ -1135,7 +1203,7 @@ function renderHtml(dataset) {
     <div class="drawer-body" id="drawerBody"></div>
   </div>
 
-  <h1>格上 GoSmart 評論追蹤 Dashboard</h1>
+  <h1>阿葛格 評論追蹤 Dashboard</h1>
   <div class="subtitle" id="subtitle"></div>
 
   <div class="grid grid-flow" id="summaryCards"></div>
@@ -1331,8 +1399,12 @@ function renderHtml(dataset) {
       <div class="chart-container">
         <canvas id="categoryChart" height="100"></canvas>
       </div>
-      <div class="note">分類依你提供的分類架構建立（定車相關／取車相關／還車相關／客服／審核／付款／站點與車輛數／停權／基本資料／系統／車輛設備／優惠碼/優惠券／帳號／車損拍照／通知／軟體更新／icon設計／投保／搜尋／更改密碼／共同承租人），皆未符合則歸入「其他」。情緒判斷以星等為代理指標（1-3星負面、4-5星正面）。上方按鈕可切換統計的時間範圍（全部/今年/本月/本週）；點擊長條圖任一區塊，或用下方篩選器，可查看該分類/情緒的實際評論。</div>
-      <div class="note" id="otherCategoryNote" style="color:#ffb84d;"></div>
+      <ul class="note expand-only-note">
+        <li>分類依你提供的分類架構建立（定車相關／取車相關／還車相關／客服／審核／付款／站點與車輛數／停權／基本資料／系統／車輛設備／優惠碼/優惠券／帳號／車損拍照／通知／軟體更新／icon設計／投保／搜尋／更改密碼／共同承租人），皆未符合則歸入「其他」。</li>
+        <li>情緒判斷以星等為代理指標（1-3星負面、4-5星正面）。</li>
+        <li>點擊長條圖任一區塊，或用下方篩選器，可查看該分類/情緒的實際評論。</li>
+        <li id="otherCategoryNote"></li>
+      </ul>
     </div>
 
     <div class="chart-card insight-card" id="stageInsightCard" data-insight-key="stage">
@@ -1349,7 +1421,15 @@ function renderHtml(dataset) {
       <div class="chart-container">
         <canvas id="stageChart" height="100"></canvas>
       </div>
-      <div class="note">依分類對應回使用流程階段：預約前（定車相關/審核）、使用中（取車相關/車輛設備/系統/站點與車輛數/icon設計/搜尋/通知/軟體更新/投保）、結束後（還車相關/付款/車損拍照）、帳號與其他（客服/帳號/更改密碼/共同承租人/優惠碼/停權/基本資料/其他）。</div>
+      <div class="note expand-only-note">
+        依分類對應回使用流程階段：
+        <ul>
+          <li>預約前（定車相關/審核）</li>
+          <li>使用中（取車相關/車輛設備/系統/站點與車輛數/icon設計/搜尋/通知/軟體更新/投保）</li>
+          <li>結束後（還車相關/付款/車損拍照）</li>
+          <li>帳號與其他（客服/帳號/更改密碼/共同承租人/優惠碼/停權/基本資料/其他）</li>
+        </ul>
+      </div>
     </div>
 
     <div class="chart-card insight-card" id="matrixInsightCard" data-insight-key="matrix">
@@ -1541,19 +1621,22 @@ function renderHtml(dataset) {
         const style = isZeroNewCount ? ' style="opacity:0.2"' : '';
         const valueClass = 'value ' + c.cls + (hasNew ? ' blink-number' : '');
         const clickAttr = (clickable && c.clickKey) ? ' data-click-key="' + c.clickKey + '"' : '';
+        const subHtml = (c.subLabel !== undefined && c.subValue !== undefined)
+          ? '<div class="card-sub"><div class="card-sub-label">' + c.subLabel + '</div><div class="card-sub-value">' + c.subValue + '</div></div>'
+          : '';
         // 沒有有效數值時（例如尚無評分資料），直接顯示 "-"，不套用計數動畫
         if (c.value === null || c.value === undefined || isNaN(c.value)) {
-          return '<div class="' + cardClass + '"' + clickAttr + '><div class="label">' + c.label + '</div><div class="' + valueClass + '"' + style + '>-</div></div>';
+          return '<div class="' + cardClass + '"' + clickAttr + '><div class="label">' + c.label + '</div><div class="' + valueClass + '"' + style + '>-</div>' + subHtml + '</div>';
         }
         const initialText = c.decimals > 0 ? (0).toFixed(c.decimals) : '0';
         return '<div class="' + cardClass + '"' + clickAttr + '><div class="label">' + c.label + '</div>' +
-          '<div class="' + valueClass + '"' + style + ' data-count-target="' + c.value + '" data-count-decimals="' + c.decimals + '">' + initialText + '</div></div>';
+          '<div class="' + valueClass + '"' + style + ' data-count-target="' + c.value + '" data-count-decimals="' + c.decimals + '">' + initialText + '</div>' + subHtml + '</div>';
       }).join('');
     }
 
     renderCardGroup(summaryEl, [
-      { label: 'Google Play<br>累積評論數', value: dataset.androidTotal, cls: 'android', decimals: 0, clickKey: 'android-total' },
-      { label: 'App Store<br>累積評論數', value: dataset.iosTotal, cls: 'ios-lime', decimals: 0, clickKey: 'ios-total' },
+      { label: 'Google Play<br>累積評論數', value: dataset.androidTotal, cls: 'android', decimals: 0, clickKey: 'android-total', subLabel: '實際總數(含手動補充)', subValue: dataset.actualAndroidTotal },
+      { label: 'App Store<br>累積評論數', value: dataset.iosTotal, cls: 'ios-lime', decimals: 0, clickKey: 'ios-total', subLabel: '實際總數(含手動補充)', subValue: dataset.actualIosTotal },
       { label: 'Google Play<br>新評論數', value: dataset.newReviewsCount.android, cls: 'new-count', decimals: 0, clickKey: 'android-new' },
       { label: 'App Store<br>新評論數', value: dataset.newReviewsCount.ios, cls: 'new-count', decimals: 0, clickKey: 'ios-new' },
     ], { square: true, clickable: true });
@@ -2011,14 +2094,24 @@ function renderHtml(dataset) {
         }, INSIGHT_ANIMATION_MS + 30);
       }
 
-      document.querySelectorAll('.insight-card').forEach(card => {
-        card.addEventListener('click', () => {
+      const insightCardsList = document.querySelectorAll('.insight-card');
+      insightCardsList.forEach(card => {
+        card.addEventListener('click', (e) => {
+          // 點在右上角的篩選按鈕上時，不要觸發整張卡片的展開/收合（讓篩選按鈕自己的功能正常運作）
+          if (e.target.closest('.toggle-group')) return;
+          // 點在圖表（canvas）範圍內時也不要觸發，不管有沒有真的點中資料點，
+          // 讓「跟圖表互動看細部評論」跟「展開/收合卡片」徹底分開，不會互相誤觸
+          if (e.target.closest('canvas')) return;
+
           const key = card.dataset.insightKey;
           const expandedClass = 'expanded-' + key;
           if (insightGrid.classList.contains(expandedClass)) {
             insightGrid.className = 'insight-grid';
+            card.classList.remove('is-first');
           } else {
             insightGrid.className = 'insight-grid ' + expandedClass;
+            insightCardsList.forEach(c => c.classList.remove('is-first'));
+            card.classList.add('is-first');
           }
           resizeChartsAfterTransition();
         });
@@ -2835,7 +2928,8 @@ function renderHtml(dataset) {
         }, ANIMATION_MS + 30);
       }
 
-      document.querySelectorAll('.detail-card').forEach(card => {
+      const detailCardsList = document.querySelectorAll('.detail-card');
+      detailCardsList.forEach(card => {
         card.addEventListener('click', (e) => {
           // 點在資料列（會跳出評論抽屜）上時，不要同時觸發整張卡片的展開/收合
           if (e.target.closest('tr.clickable-row')) return;
@@ -2844,8 +2938,11 @@ function renderHtml(dataset) {
           const expandedClass = 'expanded-' + key;
           if (detailGrid.classList.contains(expandedClass)) {
             detailGrid.className = 'detail-grid'; // 再點一次已展開的卡片 → 收合回三欄
+            card.classList.remove('is-first');
           } else {
             detailGrid.className = 'detail-grid ' + expandedClass;
+            detailCardsList.forEach(c => c.classList.remove('is-first'));
+            card.classList.add('is-first');
           }
           // 「歷史高頻痛點詳情」展開時列出 Top 16，收合（或切到其他卡片展開）時維持 Top 5
           renderPainPointTable(detailGrid.classList.contains('expanded-pain') ? (dataset.topPainPoints16 || painPoints) : painPoints);
