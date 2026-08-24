@@ -482,8 +482,9 @@ function buildDataset(dailyRuns, fullHistory, manualReviews) {
       avgScore: categoryStats[cat].count > 0 ? categoryStats[cat].scoreSum / categoryStats[cat].count : null,
     }))
     .filter((c) => c.negativeCount > 0)
-    .sort((a, b) => b.negativeCount - a.negativeCount)
-    .slice(0, 5);
+    .sort((a, b) => b.negativeCount - a.negativeCount);
+  const topPainPoints16 = topPainPoints.slice(0, 16); // 展開「歷史高頻痛點詳情」時列出更多筆數用
+  const topPainPointsTop5 = topPainPoints.slice(0, 5); // 洞察卡片跟精簡長條圖維持 Top 5
 
   // ===== 自動摘要（三）：突發趨勢變化（本月 vs 上月，找出負評明顯增加的分類） =====
   const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
@@ -600,7 +601,8 @@ function buildDataset(dailyRuns, fullHistory, manualReviews) {
     hasFullHistory: fullHistory.length > 0,
     versionAnalysis: versionAnalysis.map(({ ...rest }) => rest),
     versionRegressions,
-    topPainPoints,
+    topPainPoints: topPainPointsTop5,
+    topPainPoints16,
     trendChanges,
     recentMonths6,
     wordFrequency,
@@ -631,6 +633,10 @@ function renderHtml(dataset) {
     --neg: #ff6b6b;
   }
   * { box-sizing: border-box; }
+  html, body {
+    overflow-x: hidden; /* 展開/收合動畫過程中，內容可能暫時視覺上超出畫面寬度，這裡確保永遠不會出現左右捲軸 */
+    max-width: 100%;
+  }
   body {
     margin: 0;
     font-family: -apple-system, "PingFang TC", "Noto Sans TC", sans-serif;
@@ -764,6 +770,12 @@ function renderHtml(dataset) {
     margin-bottom: 24px;
   }
   .chart-card h2 { font-size: 14px; margin: 0 0 16px; color: var(--muted); font-weight: 500; }
+  .h2-note {
+    color: var(--muted);
+    font-size: 11px;
+    margin-top: -12px;
+    margin-bottom: 16px;
+  }
   .three-col {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
@@ -772,6 +784,85 @@ function renderHtml(dataset) {
   @media (max-width: 900px) {
     .three-col { grid-template-columns: 1fr; }
   }
+  /* ===== 自動摘要：三個詳情區塊，點擊整張卡片可展開成一整欄、其餘兩欄自動下移。
+     用 Flexbox 的 width 百分比做原生 CSS 過渡，而不是硬拉伸再裁切——
+     這樣任何時刻卡片寬度都是容器寬度的某個百分比，數學上不會超出範圍。 ===== */
+  .detail-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+  }
+  .detail-card {
+    width: calc(33.333% - 13.34px);
+    transition: width 0.35s ease;
+    flex-shrink: 0;
+  }
+  .detail-grid.expanded-version #versionDetailCard { width: 100%; }
+  .detail-grid.expanded-version #painDetailCard,
+  .detail-grid.expanded-version #trendDetailCard { width: calc(50% - 10px); }
+
+  .detail-grid.expanded-pain #painDetailCard { width: 100%; }
+  .detail-grid.expanded-pain #versionDetailCard,
+  .detail-grid.expanded-pain #trendDetailCard { width: calc(50% - 10px); }
+
+  .detail-grid.expanded-trend #trendDetailCard { width: 100%; }
+  .detail-grid.expanded-trend #versionDetailCard,
+  .detail-grid.expanded-trend #painDetailCard { width: calc(50% - 10px); }
+
+  @media (max-width: 900px) {
+    .detail-grid .detail-card { width: 100% !important; }
+  }
+  .detail-card {
+    cursor: pointer;
+    user-select: none;
+  }
+  .detail-card:hover { border-color: #454b58; }
+  .detail-card table,
+  .detail-card tr.clickable-row {
+    cursor: pointer;
+  }
+
+  /* ===== 回饋洞察：四個區塊，點擊整張卡片可展開成一整欄、其餘三欄自動下移。
+     同樣用 Flexbox 的 width 百分比做原生 CSS 過渡，避免超出範圍。 ===== */
+  .insight-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+  }
+  .insight-card {
+    width: calc(25% - 15px);
+    transition: width 0.35s ease;
+    flex-shrink: 0;
+  }
+  .insight-grid.expanded-category #categoryInsightCard { width: 100%; }
+  .insight-grid.expanded-category #stageInsightCard,
+  .insight-grid.expanded-category #matrixInsightCard,
+  .insight-grid.expanded-category #intentInsightCard { width: calc(33.333% - 13.34px); }
+
+  .insight-grid.expanded-stage #stageInsightCard { width: 100%; }
+  .insight-grid.expanded-stage #categoryInsightCard,
+  .insight-grid.expanded-stage #matrixInsightCard,
+  .insight-grid.expanded-stage #intentInsightCard { width: calc(33.333% - 13.34px); }
+
+  .insight-grid.expanded-matrix #matrixInsightCard { width: 100%; }
+  .insight-grid.expanded-matrix #categoryInsightCard,
+  .insight-grid.expanded-matrix #stageInsightCard,
+  .insight-grid.expanded-matrix #intentInsightCard { width: calc(33.333% - 13.34px); }
+
+  .insight-grid.expanded-intent #intentInsightCard { width: 100%; }
+  .insight-grid.expanded-intent #categoryInsightCard,
+  .insight-grid.expanded-intent #stageInsightCard,
+  .insight-grid.expanded-intent #matrixInsightCard { width: calc(33.333% - 13.34px); }
+
+  @media (max-width: 900px) {
+    .insight-grid .insight-card { width: 100% !important; }
+  }
+  .insight-card {
+    cursor: pointer;
+    user-select: none;
+  }
+  .insight-card:hover { border-color: #454b58; }
+
   .insight-highlight {
     font-size: 22px;
     font-weight: 700;
@@ -1059,9 +1150,10 @@ function renderHtml(dataset) {
   </div>
 
   <div class="tab-panel active" id="tab-comments">
+    <div class="two-col">
     <div class="chart-card">
       <div class="list-header">
-        <h2 style="margin:0">每月評論趨勢（每個點代表一則實際評論，滑鼠移到點上可看內容）</h2>
+        <h2 style="margin:0">每月評論趨勢</h2>
         <div class="toggle-group" id="rangeToggleGroup">
           <button class="toggle-btn" data-range="3">近3個月</button>
           <button class="toggle-btn active" data-range="6">近6個月</button>
@@ -1070,21 +1162,27 @@ function renderHtml(dataset) {
           <button class="toggle-btn" id="btnResetZoom">重置縮放</button>
         </div>
       </div>
+      <div class="h2-note">每個點代表一則實際評論，滑鼠移到點上可看內容</div>
       <div class="scatter-nav">
+        <button class="nav-btn" id="btnPrevWindow">◀ 上一區間</button>
         <span class="note" id="scatterRangeNote" style="margin:0"></span>
+        <button class="nav-btn" id="btnNextWindow">下一區間 ▶</button>
       </div>
       <div class="chart-container">
         <canvas id="commentScatterChart" height="110"></canvas>
       </div>
-      <div class="note">用上方按鈕控制縮放程度（近3個月／近6個月／近1年／全部）；按住滑鼠左右拖曳（或觸控板左右滑動）來移動檢視區間，查看更早或更晚的資料。</div>
+      <div class="note">用上方按鈕控制縮放程度（近3個月／近6個月／近1年／全部）；用「上一區間／下一區間」按鈕移動檢視區間，查看更早或更晚的資料。</div>
     </div>
 
     <div class="chart-card">
-      <h2>常見字詞頻率排行（不分正負評，已過濾常見口語詞/語助詞）</h2>
-      <div class="chart-container" style="height:600px;">
+      <h2>常見字詞頻率排行</h2>
+      <div class="h2-note">不分正負評，已過濾常見口語詞/語助詞</div>
+      <div class="chart-container" id="wordFrequencyContainer" style="height:280px;">
         <canvas id="wordFrequencyChart"></canvas>
       </div>
+      <button class="nav-btn" id="btnLoadMoreWords" style="margin-top:10px;">載入更多字詞</button>
       <div class="note">用「雙字詞」統計，不是正式的中文斷詞演算法，準確度有限，僅供快速抓語感參考。點擊長條可查看包含該字詞的評論。</div>
+    </div>
     </div>
 
     <div class="chart-card">
@@ -1135,7 +1233,8 @@ function renderHtml(dataset) {
         </div>
       </div>
       <div class="chart-card" id="insightCardTrend">
-        <h2>📈 突發趨勢變化（本月 vs 上月）</h2>
+        <h2>📈 突發趨勢變化</h2>
+        <div class="h2-note">本月 vs 上月</div>
         <div id="insightTrendBody"></div>
         <div class="chart-container" style="height:160px; margin-top:12px;">
           <canvas id="trendChangeChart"></canvas>
@@ -1144,8 +1243,10 @@ function renderHtml(dataset) {
       </div>
     </div>
 
-    <div class="chart-card">
+    <div class="detail-grid" id="autoSummaryDetailGrid">
+    <div class="chart-card detail-card" id="versionDetailCard" data-detail-key="version">
       <h2>版本異常詳情</h2>
+      <div class="h2-note">點擊此區塊可展開查看更多內容</div>
       <div class="table-wrap">
       <table>
         <thead>
@@ -1157,8 +1258,9 @@ function renderHtml(dataset) {
       <div class="note">點擊任一列可查看該版本的實際負評內容。</div>
     </div>
 
-    <div class="chart-card">
+    <div class="chart-card detail-card" id="painDetailCard" data-detail-key="pain">
       <h2>歷史高頻痛點詳情</h2>
+      <div class="h2-note">點擊此區塊可展開查看更多內容</div>
       <div class="table-wrap">
       <table>
         <thead>
@@ -1170,8 +1272,9 @@ function renderHtml(dataset) {
       <div class="note">點擊任一列可查看該分類的負評內容。</div>
     </div>
 
-    <div class="chart-card">
+    <div class="chart-card detail-card" id="trendDetailCard" data-detail-key="trend">
       <h2>趨勢變化詳情</h2>
+      <div class="h2-note">點擊此區塊可展開查看更多內容</div>
       <div class="table-wrap">
       <table>
         <thead>
@@ -1181,6 +1284,7 @@ function renderHtml(dataset) {
       </table>
       </div>
       <div class="note">只列出「本月至少 2 則」且比上月增加的分類，避免 1 則的雜訊被誤判成趨勢。點擊任一列可查看本月該分類的負評內容。</div>
+    </div>
     </div>
   </div>
 
@@ -1212,9 +1316,10 @@ function renderHtml(dataset) {
   </div>
 
   <div class="tab-panel" id="tab-sentiment">
-    <div class="chart-card">
+    <div class="insight-grid" id="insightDetailGrid">
+    <div class="chart-card insight-card" id="categoryInsightCard" data-insight-key="category">
       <div class="list-header">
-        <h2 style="margin:0">情緒與類別分析（依關鍵字比對，可能一則評論同時符合多個類別）</h2>
+        <h2 style="margin:0">情緒與類別分析</h2>
         <div class="toggle-group" id="categoryTimeRangeToggleGroup">
           <button class="toggle-btn active" data-time-range="all">全部</button>
           <button class="toggle-btn" data-time-range="year">今年</button>
@@ -1222,6 +1327,7 @@ function renderHtml(dataset) {
           <button class="toggle-btn" data-time-range="week">本週</button>
         </div>
       </div>
+      <div class="h2-note">依關鍵字比對，可能一則評論同時符合多個類別；點擊此區塊可展開查看更多內容</div>
       <div class="chart-container">
         <canvas id="categoryChart" height="100"></canvas>
       </div>
@@ -1229,38 +1335,7 @@ function renderHtml(dataset) {
       <div class="note" id="otherCategoryNote" style="color:#ffb84d;"></div>
     </div>
 
-    <div class="chart-card">
-      <div class="list-header">
-        <h2 style="margin:0">頻率 × 嚴重度矩陣（每個點是一個分類；越靠右代表提到次數越多，越靠下代表平均星等越低）</h2>
-        <div class="toggle-group" id="matrixTimeRangeToggleGroup">
-          <button class="toggle-btn active" data-time-range="all">全部</button>
-          <button class="toggle-btn" data-time-range="year">今年</button>
-          <button class="toggle-btn" data-time-range="month">本月</button>
-          <button class="toggle-btn" data-time-range="week">本週</button>
-        </div>
-      </div>
-      <div class="chart-container">
-        <canvas id="matrixChart" height="110"></canvas>
-      </div>
-      <div class="note">右下角（高頻率、低星等）是最優先該處理的痛點；左下角則是次數雖少、但每次都很嚴重的「地雷」類別，也值得留意。</div>
-    </div>
-
-    <div class="chart-card">
-      <div class="list-header">
-        <h2 style="margin:0">意圖分佈（抱怨/bug、功能請求、純稱讚、一般，依關鍵字粗略判斷）</h2>
-        <div class="toggle-group" id="intentTimeRangeToggleGroup">
-          <button class="toggle-btn active" data-time-range="all">全部</button>
-          <button class="toggle-btn" data-time-range="year">今年</button>
-          <button class="toggle-btn" data-time-range="month">本月</button>
-          <button class="toggle-btn" data-time-range="week">本週</button>
-        </div>
-      </div>
-      <div class="chart-container">
-        <canvas id="intentChart" height="90"></canvas>
-      </div>
-    </div>
-
-    <div class="chart-card">
+    <div class="chart-card insight-card" id="stageInsightCard" data-insight-key="stage">
       <div class="list-header">
         <h2 style="margin:0">用戶旅程階段檢視</h2>
         <div class="toggle-group" id="stageTimeRangeToggleGroup">
@@ -1270,10 +1345,45 @@ function renderHtml(dataset) {
           <button class="toggle-btn" data-time-range="week">本週</button>
         </div>
       </div>
+      <div class="h2-note">點擊此區塊可展開查看更多內容</div>
       <div class="chart-container">
         <canvas id="stageChart" height="100"></canvas>
       </div>
       <div class="note">依分類對應回使用流程階段：預約前（定車相關/審核）、使用中（取車相關/車輛設備/系統/站點與車輛數/icon設計/搜尋/通知/軟體更新/投保）、結束後（還車相關/付款/車損拍照）、帳號與其他（客服/帳號/更改密碼/共同承租人/優惠碼/停權/基本資料/其他）。</div>
+    </div>
+
+    <div class="chart-card insight-card" id="matrixInsightCard" data-insight-key="matrix">
+      <div class="list-header">
+        <h2 style="margin:0">頻率 × 嚴重度矩陣</h2>
+        <div class="toggle-group" id="matrixTimeRangeToggleGroup">
+          <button class="toggle-btn active" data-time-range="all">全部</button>
+          <button class="toggle-btn" data-time-range="year">今年</button>
+          <button class="toggle-btn" data-time-range="month">本月</button>
+          <button class="toggle-btn" data-time-range="week">本週</button>
+        </div>
+      </div>
+      <div class="h2-note">每個點是一個分類；越靠右代表提到次數越多，越靠下代表平均星等越低；點擊此區塊可展開查看更多內容</div>
+      <div class="chart-container">
+        <canvas id="matrixChart" height="110"></canvas>
+      </div>
+      <div class="note">右下角（高頻率、低星等）是最優先該處理的痛點；左下角則是次數雖少、但每次都很嚴重的「地雷」類別，也值得留意。</div>
+    </div>
+
+    <div class="chart-card insight-card" id="intentInsightCard" data-insight-key="intent">
+      <div class="list-header">
+        <h2 style="margin:0">意圖分佈</h2>
+        <div class="toggle-group" id="intentTimeRangeToggleGroup">
+          <button class="toggle-btn active" data-time-range="all">全部</button>
+          <button class="toggle-btn" data-time-range="year">今年</button>
+          <button class="toggle-btn" data-time-range="month">本月</button>
+          <button class="toggle-btn" data-time-range="week">本週</button>
+        </div>
+      </div>
+      <div class="h2-note">抱怨/bug、功能請求、純稱讚、一般，依關鍵字粗略判斷；點擊此區塊可展開查看更多內容</div>
+      <div class="chart-container">
+        <canvas id="intentChart" height="90"></canvas>
+      </div>
+    </div>
     </div>
 
     <div class="chart-card">
@@ -1305,7 +1415,8 @@ function renderHtml(dataset) {
 
   <div class="tab-panel" id="tab-version">
     <div class="chart-card">
-      <h2>各版本平均評分與評論數（僅 Google Play，App Store 抓取流程目前未取得版本號）</h2>
+      <h2>各版本平均評分與評論數</h2>
+      <div class="h2-note">僅 Google Play，App Store 抓取流程目前未取得版本號</div>
       <div class="chart-container">
         <canvas id="versionChart" height="100"></canvas>
       </div>
@@ -1583,6 +1694,7 @@ function renderHtml(dataset) {
         plugins: { legend: { labels: { color: '#e8e9ed' } } },
         onClick: (evt, elements) => {
           if (!elements.length) return;
+          if (evt.native) evt.native.stopPropagation();
           const el = elements[0];
           const category = dataset.categoryOrder[el.index];
           const sentimentKey = categoryChartInstance.data.datasets[el.datasetIndex].sentimentKey;
@@ -1649,6 +1761,7 @@ function renderHtml(dataset) {
         },
         onClick: (evt, elements) => {
           if (!elements.length) return;
+          if (evt.native) evt.native.stopPropagation();
           const point = matrixChartInstance.data.datasets[0].data[elements[0].index];
           categorySelect.value = point.category;
           setSentimentFilter('all');
@@ -1696,6 +1809,7 @@ function renderHtml(dataset) {
         plugins: { legend: { display: false } },
         onClick: (evt, elements) => {
           if (!elements.length) return;
+          if (evt.native) evt.native.stopPropagation();
           const intentKey = dataset.intentOrder[elements[0].index];
           const sourceList = dataset.reviewsByRange[activeIntentRange];
           const matched = sourceList.filter(r => r.intent === intentKey);
@@ -1735,6 +1849,7 @@ function renderHtml(dataset) {
         plugins: { legend: { labels: { color: '#e8e9ed' } } },
         onClick: (evt, elements) => {
           if (!elements.length) return;
+          if (evt.native) evt.native.stopPropagation();
           const el = elements[0];
           const stage = dataset.stageOrder[el.index];
           const sentimentKey = stageChartInstance.data.datasets[el.datasetIndex].sentimentKey;
@@ -1878,6 +1993,38 @@ function renderHtml(dataset) {
 
     renderCategoryDetail();
 
+    // ===== 回饋洞察：四個區塊，點擊整張卡片展開成一整欄、其餘三欄自動下移。
+    //      版面切換純粹靠 CSS 的 width 過渡完成（見上方 .insight-grid 樣式），
+    //      這裡只需要切換 class，不需要 JS 計算位移/縮放，也就不會有超出畫面的風險。 =====
+    (function setupInsightGridExpand() {
+      const insightGrid = document.getElementById('insightDetailGrid');
+      if (!insightGrid) return;
+      const INSIGHT_ANIMATION_MS = 350;
+
+      function resizeChartsAfterTransition() {
+        setTimeout(() => {
+          if (window.Chart && Chart.instances) {
+            Object.values(Chart.instances).forEach(c => {
+              try { c.resize(); } catch (e) {}
+            });
+          }
+        }, INSIGHT_ANIMATION_MS + 30);
+      }
+
+      document.querySelectorAll('.insight-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const key = card.dataset.insightKey;
+          const expandedClass = 'expanded-' + key;
+          if (insightGrid.classList.contains(expandedClass)) {
+            insightGrid.className = 'insight-grid';
+          } else {
+            insightGrid.className = 'insight-grid ' + expandedClass;
+          }
+          resizeChartsAfterTransition();
+        });
+      });
+    })();
+
     // ===== 評論 tab：散佈圖（每個點 = 一則評論） =====
     const monthKeys = dataset.monthKeys;
     function monthToIndex(m) {
@@ -1953,6 +2100,16 @@ function renderHtml(dataset) {
       const rangeLabel = size === 'all' ? '全部期間' : (monthKeys[minIndex] + ' ~ ' + monthKeys[maxIndex]);
       noteEl.textContent = '目前顯示 ' + totalPoints + ' 則評論（' + rangeLabel + '）';
 
+      const prevBtn = document.getElementById('btnPrevWindow');
+      const nextBtn = document.getElementById('btnNextWindow');
+      if (size === 'all') {
+        prevBtn.disabled = true;
+        nextBtn.disabled = true;
+      } else {
+        prevBtn.disabled = minIndex <= 0;
+        nextBtn.disabled = maxIndex >= monthKeys.length - 1;
+      }
+
       if (scatterChart) {
         scatterChart.destroy();
       }
@@ -2013,15 +2170,13 @@ function renderHtml(dataset) {
               padding: 10,
             },
             zoom: {
-              pan: { enabled: true, mode: 'x' },
+              pan: { enabled: false },
               zoom: {
                 wheel: { enabled: false },
                 pinch: { enabled: false },
                 mode: 'x',
               },
               limits: {
-                // 邊界固定為「全部月份」的範圍，不能跟目前視窗一樣，
-                // 否則拖曳/縮放會完全動不了（這是先前版本的臭蟲）。
                 x: { min: -0.5, max: monthKeys.length - 0.5 },
               },
             },
@@ -2042,6 +2197,18 @@ function renderHtml(dataset) {
 
     document.getElementById('btnResetZoom').addEventListener('click', () => {
       if (scatterChart && scatterChart.resetZoom) scatterChart.resetZoom();
+    });
+
+    document.getElementById('btnPrevWindow').addEventListener('click', () => {
+      if (currentWindowSize === 'all') return;
+      currentWindowStart = clampWindowStart(currentWindowSize, currentWindowStart - currentWindowSize);
+      renderScatterChart();
+    });
+
+    document.getElementById('btnNextWindow').addEventListener('click', () => {
+      if (currentWindowSize === 'all') return;
+      currentWindowStart = clampWindowStart(currentWindowSize, currentWindowStart + currentWindowSize);
+      renderScatterChart();
     });
 
     currentWindowStart = Math.max(0, monthKeys.length - currentWindowSize);
@@ -2314,36 +2481,65 @@ function renderHtml(dataset) {
     (function renderWordFrequency() {
       const words = dataset.wordFrequency || [];
       const canvas = document.getElementById('wordFrequencyChart');
+      const container = document.getElementById('wordFrequencyContainer');
+      const btnLoadMoreWords = document.getElementById('btnLoadMoreWords');
+
       if (words.length === 0) {
         canvas.parentElement.innerHTML = '<div class="insight-empty">目前資料量不足以統計出有意義的字詞頻率。</div>';
+        btnLoadMoreWords.style.display = 'none';
         return;
       }
-      new Chart(canvas, {
-        type: 'bar',
-        data: {
-          labels: words.map(w => w.word),
-          datasets: [{
-            data: words.map(w => w.count),
-            backgroundColor: '#C6F24E',
-          }],
-        },
-        options: {
-          indexAxis: 'y',
-          responsive: true,
-          maintainAspectRatio: false,
-          scales: {
-            x: { ticks: { color: '#9aa0ac' }, grid: { color: '#2a2e38' } },
-            y: { ticks: { color: '#9aa0ac', autoSkip: false }, grid: { display: false } },
+
+      const COLLAPSED_COUNT = 8;
+      let expanded = false;
+      let wordChartInstance = null;
+
+      function draw() {
+        const shownWords = expanded ? words : words.slice(0, COLLAPSED_COUNT);
+        container.style.height = expanded ? '600px' : '280px';
+
+        if (wordChartInstance) wordChartInstance.destroy();
+        wordChartInstance = new Chart(canvas, {
+          type: 'bar',
+          data: {
+            labels: shownWords.map(w => w.word),
+            datasets: [{
+              data: shownWords.map(w => w.count),
+              backgroundColor: '#C6F24E',
+            }],
           },
-          plugins: { legend: { display: false } },
-          onClick: (evt, elements) => {
-            if (!elements.length) return;
-            const w = words[elements[0].index];
-            const matched = dataset.allReviewsFlat.filter(r => (r.text || '').includes(w.word));
-            openReviewDrawer('包含「' + w.word + '」的評論', '共 ' + matched.length + ' 則', matched);
+          options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: { ticks: { color: '#9aa0ac' }, grid: { color: '#2a2e38' } },
+              y: { ticks: { color: '#9aa0ac', autoSkip: false }, grid: { display: false } },
+            },
+            plugins: { legend: { display: false } },
+            onClick: (evt, elements) => {
+              if (!elements.length) return;
+              const w = shownWords[elements[0].index];
+              const matched = dataset.allReviewsFlat.filter(r => (r.text || '').includes(w.word));
+              openReviewDrawer('包含「' + w.word + '」的評論', '共 ' + matched.length + ' 則', matched);
+            },
           },
-        },
+        });
+
+        if (words.length <= COLLAPSED_COUNT) {
+          btnLoadMoreWords.style.display = 'none';
+        } else {
+          btnLoadMoreWords.style.display = '';
+          btnLoadMoreWords.textContent = expanded ? '收合字詞排行' : '載入更多字詞（還有 ' + (words.length - COLLAPSED_COUNT) + ' 個）';
+        }
+      }
+
+      btnLoadMoreWords.addEventListener('click', () => {
+        expanded = !expanded;
+        draw();
       });
+
+      draw();
     })();
 
     // ===== 自動摘要 tab：規則式洞察 =====
@@ -2422,12 +2618,14 @@ function renderHtml(dataset) {
         });
       }
 
-      // --- 詳情表格：高頻痛點 ---
+      // --- 詳情表格：高頻痛點（預設 Top 5，展開卡片後改列出 Top 16） ---
       const painTbody = document.getElementById('painPointTableBody');
-      if (painPoints.length === 0) {
-        painTbody.innerHTML = '<tr><td colspan="5" class="insight-empty">目前沒有資料。</td></tr>';
-      } else {
-        painTbody.innerHTML = painPoints.map((p, idx) => \`
+      function renderPainPointTable(list) {
+        if (list.length === 0) {
+          painTbody.innerHTML = '<tr><td colspan="5" class="insight-empty">目前沒有資料。</td></tr>';
+          return;
+        }
+        painTbody.innerHTML = list.map((p, idx) => \`
           <tr class="clickable-row" data-category="\${p.category}">
             <td>#\${idx + 1}</td>
             <td>\${iconFor(p.category)} \${p.category}</td>
@@ -2444,6 +2642,7 @@ function renderHtml(dataset) {
           });
         });
       }
+      renderPainPointTable(painPoints);
 
       // --- 詳情表格：趨勢變化 ---
       const trendTbody = document.getElementById('trendChangeTableBody');
@@ -2619,6 +2818,40 @@ function renderHtml(dataset) {
       } else {
         sparklineRow.innerHTML = '';
       }
+
+      // --- 三個詳情區塊：點擊整張卡片展開成一整欄，其餘兩欄自動下移。
+      //     版面切換純粹靠 CSS 的 width 過渡完成（見上方 .detail-grid 樣式），
+      //     這裡只需要切換 class，不需要 JS 計算位移/縮放，也就不會有超出畫面的風險。 ---
+      const detailGrid = document.getElementById('autoSummaryDetailGrid');
+      const ANIMATION_MS = 350;
+
+      function resizeChartsAfterDetailTransition() {
+        setTimeout(() => {
+          if (window.Chart && Chart.instances) {
+            Object.values(Chart.instances).forEach(c => {
+              try { c.resize(); } catch (e) {}
+            });
+          }
+        }, ANIMATION_MS + 30);
+      }
+
+      document.querySelectorAll('.detail-card').forEach(card => {
+        card.addEventListener('click', (e) => {
+          // 點在資料列（會跳出評論抽屜）上時，不要同時觸發整張卡片的展開/收合
+          if (e.target.closest('tr.clickable-row')) return;
+
+          const key = card.dataset.detailKey;
+          const expandedClass = 'expanded-' + key;
+          if (detailGrid.classList.contains(expandedClass)) {
+            detailGrid.className = 'detail-grid'; // 再點一次已展開的卡片 → 收合回三欄
+          } else {
+            detailGrid.className = 'detail-grid ' + expandedClass;
+          }
+          // 「歷史高頻痛點詳情」展開時列出 Top 16，收合（或切到其他卡片展開）時維持 Top 5
+          renderPainPointTable(detailGrid.classList.contains('expanded-pain') ? (dataset.topPainPoints16 || painPoints) : painPoints);
+          resizeChartsAfterDetailTransition();
+        });
+      });
     })();
 
     // ===== 評分 tab：月平均趨勢 + 星等分佈 =====
