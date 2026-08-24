@@ -1552,24 +1552,32 @@
     renderCategoryDetail();
 
     // ===== 回饋洞察：四個區塊，點擊整張卡片展開成一整欄、其餘三欄自動下移。
-    //      版面切換純粹靠 CSS 的 width 過渡完成（見上方 .insight-grid 樣式），
-    //      這裡只需要切換 class，不需要 JS 計算位移/縮放，也就不會有超出畫面的風險。 =====
+    //      版面切換純粹靠 CSS 的 width 過渡完成（見上方 .insight-grid 樣式）。=====
     (function setupInsightGridExpand() {
       const insightGrid = document.getElementById('insightDetailGrid');
       if (!insightGrid) return;
-      const INSIGHT_ANIMATION_MS = 350;
 
-      function resizeChartsAfterTransition() {
-        setTimeout(() => {
-          if (window.Chart && Chart.instances) {
-            Object.values(Chart.instances).forEach(c => {
-              try { c.resize(); } catch (e) {}
-            });
-          }
-        }, INSIGHT_ANIMATION_MS + 30);
+      function resizeAllCharts() {
+        if (window.Chart && Chart.instances) {
+          Object.values(Chart.instances).forEach(c => {
+            try { c.resize(); } catch (e) {}
+          });
+        }
       }
 
       const insightCardsList = document.querySelectorAll('.insight-card');
+
+      // 不用「猜時間」的 setTimeout，改成監聽每張卡片自己的 CSS width 過渡動畫「真正結束」的那一刻
+      // 才校正圖表尺寸，不管裝置/網路速度快慢，都能保證是在動畫確實跑完之後才校正，避免校正到動畫
+      // 途中的中間尺寸、之後就再也沒機會修正回來的問題。
+      insightCardsList.forEach(card => {
+        card.addEventListener('transitionend', (e) => {
+          if (e.propertyName === 'width') {
+            resizeAllCharts();
+          }
+        });
+      });
+
       insightCardsList.forEach(card => {
         card.addEventListener('click', (e) => {
           // 點在右上角的篩選按鈕上時，不要觸發整張卡片的展開/收合（讓篩選按鈕自己的功能正常運作）
@@ -1588,7 +1596,9 @@
             insightCardsList.forEach(c => c.classList.remove('is-first'));
             card.classList.add('is-first');
           }
-          resizeChartsAfterTransition();
+          // 保險：萬一某些瀏覽器沒有正確觸發 transitionend（例如寬度剛好沒變化），
+          // 額外用一個較長的備援延遲也校正一次。
+          setTimeout(resizeAllCharts, 500);
         });
       });
     })();
@@ -2391,22 +2401,29 @@
       }
 
       // --- 三個詳情區塊：點擊整張卡片展開成一整欄，其餘兩欄自動下移。
-      //     版面切換純粹靠 CSS 的 width 過渡完成（見上方 .detail-grid 樣式），
-      //     這裡只需要切換 class，不需要 JS 計算位移/縮放，也就不會有超出畫面的風險。 ---
+      //     版面切換純粹靠 CSS 的 width 過渡完成（見上方 .detail-grid 樣式）。 ---
       const detailGrid = document.getElementById('autoSummaryDetailGrid');
-      const ANIMATION_MS = 350;
 
-      function resizeChartsAfterDetailTransition() {
-        setTimeout(() => {
-          if (window.Chart && Chart.instances) {
-            Object.values(Chart.instances).forEach(c => {
-              try { c.resize(); } catch (e) {}
-            });
-          }
-        }, ANIMATION_MS + 30);
+      function resizeAllChartsInDetailGrid() {
+        if (window.Chart && Chart.instances) {
+          Object.values(Chart.instances).forEach(c => {
+            try { c.resize(); } catch (e) {}
+          });
+        }
       }
 
       const detailCardsList = document.querySelectorAll('.detail-card');
+
+      // 監聽每張卡片自己的 CSS width 過渡動畫「真正結束」的那一刻才校正圖表尺寸，
+      // 不用猜時間，避免在較慢裝置/網路下校正到動畫途中的錯誤尺寸。
+      detailCardsList.forEach(card => {
+        card.addEventListener('transitionend', (e) => {
+          if (e.propertyName === 'width') {
+            resizeAllChartsInDetailGrid();
+          }
+        });
+      });
+
       detailCardsList.forEach(card => {
         card.addEventListener('click', (e) => {
           // 點在資料列（會跳出評論抽屜）上時，不要同時觸發整張卡片的展開/收合
@@ -2424,7 +2441,8 @@
           }
           // 「歷史高頻痛點詳情」展開時列出 Top 16，收合（或切到其他卡片展開）時維持 Top 5
           renderPainPointTable(detailGrid.classList.contains('expanded-pain') ? (dataset.topPainPoints16 || painPoints) : painPoints);
-          resizeChartsAfterDetailTransition();
+          // 保險：萬一某些瀏覽器沒有正確觸發 transitionend，額外用一個較長的備援延遲也校正一次。
+          setTimeout(resizeAllChartsInDetailGrid, 500);
         });
       });
     })();
