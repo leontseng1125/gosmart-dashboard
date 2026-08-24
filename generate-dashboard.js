@@ -776,9 +776,11 @@ function renderHtml(dataset) {
     cursor: pointer;
     transition: transform 0.15s ease, box-shadow 0.15s ease;
   }
-  .card.card-clickable:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  @media (hover: hover) {
+    .card.card-clickable:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
   }
 
   .tabs {
@@ -861,11 +863,13 @@ function renderHtml(dataset) {
     transition: box-shadow 0.2s ease, border-color 0.2s ease;
   }
   .detail-card.is-first { order: -1; }
-  .detail-card:hover {
-    border-color: #454b58;
-    box-shadow: 0 0 24px rgba(198, 242, 78, 0.15);
+  @media (hover: hover) {
+    .detail-card:hover {
+      border-color: #454b58;
+      box-shadow: 0 0 24px rgba(198, 242, 78, 0.15);
+    }
+    .detail-card:hover h2 { color: #C6F24E; transition: color 0.2s ease; }
   }
-  .detail-card:hover h2 { color: #C6F24E; transition: color 0.2s ease; }
   .detail-card table,
   .detail-card tr.clickable-row {
     cursor: pointer;
@@ -912,11 +916,13 @@ function renderHtml(dataset) {
     transition: box-shadow 0.2s ease, border-color 0.2s ease;
   }
   .insight-card.is-first { order: -1; }
-  .insight-card:hover {
-    border-color: #454b58;
-    box-shadow: 0 0 24px rgba(198, 242, 78, 0.15);
+  @media (hover: hover) {
+    .insight-card:hover {
+      border-color: #454b58;
+      box-shadow: 0 0 24px rgba(198, 242, 78, 0.15);
+    }
+    .insight-card:hover h2 { color: #C6F24E; transition: color 0.2s ease; }
   }
-  .insight-card:hover h2 { color: #C6F24E; transition: color 0.2s ease; }
 
   /* 說明文字（列點式）預設隱藏，只有該區塊展開時才顯示，避免收合狀態下版面被說明文字撐開 */
   .expand-only-note { display: none; }
@@ -943,7 +949,9 @@ function renderHtml(dataset) {
   .insight-sub { color: var(--muted); font-size: 12px; line-height: 1.6; }
   .insight-empty { color: var(--muted); font-size: 13px; }
   tr.clickable-row { cursor: pointer; }
-  tr.clickable-row:hover { background: rgba(255,255,255,0.04); }
+  @media (hover: hover) {
+    tr.clickable-row:hover { background: rgba(255,255,255,0.04); }
+  }
   .two-col {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -1165,7 +1173,9 @@ function renderHtml(dataset) {
     user-select: none;
     transition: color 0.15s ease, transform 0.1s ease;
   }
-  .star-btn:hover { transform: scale(1.15); }
+  @media (hover: hover) {
+    .star-btn:hover { transform: scale(1.15); }
+  }
   .star-btn.star-filled { color: #C6F24E; }
   .star-btn-drawer {
     position: absolute;
@@ -1829,6 +1839,21 @@ function renderHtml(dataset) {
         localStorage.setItem(TAB_STORAGE_KEY, btn.dataset.tab); // 記住這次切到的分頁，下次重整網頁時還原
         replayTabAnimations(btn.dataset.tab);
       });
+    });
+
+    // ===== 瀏覽器視窗尺寸改變時（例如把視窗縮小），讓所有圖表重新計算正確尺寸 =====
+    // 這裡只在「真的改變視窗大小」時觸發，跟切換分頁的動畫重播是兩件獨立的事，
+    // 不會重新引入「切換分頁時圖表從左上角彈出來」那個問題。
+    let resizeDebounceTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeDebounceTimer);
+      resizeDebounceTimer = setTimeout(() => {
+        if (window.Chart && Chart.instances) {
+          Object.values(Chart.instances).forEach((c) => {
+            try { c.resize(); } catch (e) {}
+          });
+        }
+      }, 150);
     });
 
     // ===== 情緒分析 tab：情緒 × 類別 統計圖 =====
