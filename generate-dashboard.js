@@ -1525,12 +1525,73 @@ function renderHtml(dataset) {
   <script>
     const dataset = ${dataJson};
 
+    // ===== 記住目前分頁：重新整理網頁時停留在原本的分頁，不要都跳回「評論」 =====
+    // 在任何圖表建立之前就先切換好分頁，這樣被還原的分頁一開始就是「可見」狀態，
+    // 圖表尺寸計算也會是正確的，不需要額外等 resize。
+    const TAB_STORAGE_KEY = 'gosmart-active-tab';
+    (function restoreActiveTab() {
+      const savedTab = localStorage.getItem(TAB_STORAGE_KEY);
+      if (!savedTab) return;
+      const targetBtn = document.querySelector('.tab-btn[data-tab="' + savedTab + '"]');
+      const targetPanel = document.getElementById('tab-' + savedTab);
+      if (!targetBtn || !targetPanel) return;
+      document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
+      targetBtn.classList.add('active');
+      targetPanel.classList.add('active');
+    })();
+
+    // ===== 讓所有分頁在圖表建立當下都先有「正確的版面尺寸」，避免圖表在寬高是 0 的
+    //      隱藏分頁裡建立、內部座標塌陷到左上角（切換分頁時修正尺寸會變成從左上角「彈出來」的怪異動畫）=====
+    // 做法：暫時讓所有分頁都用 visibility:hidden（保留版面空間、但不會被畫出來）取代
+    // display:none，讓 Chart.js 在建立當下就能量到正確的寬高；因為這整段（樣式覆蓋→
+    // 建立所有圖表→恢復樣式）是同一串同步執行的程式碼，瀏覽器不會在中途畫面，
+    // 所以不會有「畫面暫時變很長」的閃爍問題。所有圖表都建立完成後，再恢復正常的顯示/隱藏規則。
+    const allTabPanelsForInit = document.querySelectorAll('.tab-panel');
+    allTabPanelsForInit.forEach((p) => {
+      if (!p.classList.contains('active')) {
+        p.style.display = 'block';
+        p.style.visibility = 'hidden';
+      }
+    });
+
     // 註冊縮放/平移外掛（不同版本的 UMD 建置可能掛在不同全域變數名稱下，都嘗試看看）
     const zoomPluginRef = window.ChartZoom || window['chartjs-plugin-zoom'] || window.zoomPlugin;
     if (zoomPluginRef && window.Chart) {
       Chart.register(zoomPluginRef);
     } else {
       console.warn('縮放/平移外掛未成功載入，圖表的滾輪縮放與拖曳平移功能可能無法使用（不影響其他功能）。');
+    }
+
+    // ===== 圖表進場動畫（每次重整網頁都會重新播放一次，因為每次都是重新建立圖表） =====
+    // 全域預設：Chart.js 對長條圖的預設動畫本來就是「從座標軸的 0 基準點往外長出」，
+    // 直立長條圖剛好符合「由下往上長出」、橫條圖剛好符合「由左往右長出」，
+    // 所以只要確保動畫有開啟、給一個統一的時長跟緩動曲線即可，不需要每張圖表另外寫設定。
+    if (window.Chart) {
+      Chart.defaults.animation = { duration: 800, easing: 'easeOutQuart' };
+    }
+
+    // 散佈圖（純點點，例如每月評論趨勢、頻率×嚴重度矩陣）：用「淡入」取代 Chart.js 預設的
+    // 「點點半徑從 0 長大」動畫，畫布本身用 CSS 做透明度淡入，圖表內部動畫關閉避免兩種效果打架。
+    function fadeInCanvas(canvas, duration) {
+      canvas.style.opacity = '0';
+      requestAnimationFrame(() => {
+        canvas.style.transition = 'opacity ' + (duration || 700) + 'ms ease-out';
+        canvas.style.opacity = '1';
+      });
+    }
+
+    // 點點+線段圖（例如每月平均評分趨勢、版本評分趨勢）：點點依 X 軸順序由左至右陸續出現，
+    // 線段因為是即時連接「目前已經動畫到的點位置」，會自然跟著點點一起由左至右延伸出來。
+    function pointsThenLineAnimation(stepMs) {
+      return {
+        delay(ctx) {
+          if (ctx.type === 'data' && ctx.mode === 'default') {
+            return ctx.dataIndex * (stepMs || 45);
+          }
+          return 0;
+        },
+      };
     }
 
     // ===== 點擊圖表資料點時滑出的評論抽屜 =====
@@ -1722,6 +1783,42 @@ function renderHtml(dataset) {
     setupCountAnimation(summaryEl);
     setupCountAnimation(ratingsSummaryEl);
 
+    // ===== 切換到某個分頁時，重播該分頁裡圖表的進場動畫 =====
+    // 圖表在頁面載入當下就已經全部建立好、動畫也已經在背景（隱藏狀態）悄悄播完了，
+    // 所以單純切換分頁不會看到任何動畫。這裡用 Chart.js 的 reset()+update() 技巧，
+    // 在「真正切過去、看得到的那一刻」重新播放一次進場動畫；純點點淡入的圖表另外重播 CSS 淡入。
+    const TAB_CHART_IDS = {
+      comments: ['commentScatterChart', 'wordFrequencyChart'],
+      autosummary: ['versionTrendChart', 'painPointsChart', 'trendChangeChart'],
+      sentiment: ['categoryChart', 'stageChart', 'matrixChart', 'intentChart'],
+      version: ['versionChart'],
+      ratings: ['trendChart', 'androidDistChart', 'iosDistChart'],
+    };
+    function replayTabAnimations(tabKey) {
+      if (window.Chart && Chart.instances) {
+        const idsForTab = TAB_CHART_IDS[tabKey] || [];
+        Object.values(Chart.instances).forEach((c) => {
+          const canvasId = c.canvas && c.canvas.id;
+          if (!canvasId) return;
+          const belongsToTab = idsForTab.includes(canvasId) || (tabKey === 'autosummary' && canvasId.indexOf('sparkline-') === 0);
+          if (!belongsToTab) return;
+          try {
+            c.reset();
+            c.update();
+          } catch (e) {}
+        });
+      }
+      // 純點點淡入的圖表（Chart.js 內建動畫關閉，靠外層 canvas 的 CSS 淡入呈現），額外重播一次
+      if (tabKey === 'comments') {
+        const el = document.getElementById('commentScatterChart');
+        if (el) fadeInCanvas(el, 700);
+      }
+      if (tabKey === 'sentiment') {
+        const el = document.getElementById('matrixChart');
+        if (el) fadeInCanvas(el, 700);
+      }
+    }
+
     // ===== Tab 切換 =====
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1729,15 +1826,8 @@ function renderHtml(dataset) {
         document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
         document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-        // 圖表在「隱藏分頁」裡建立時，Chart.js 會算出錯誤尺寸；
-        // 分頁切換、容器變成可見後，強制所有圖表重新計算一次正確尺寸，避免拉長/變形。
-        requestAnimationFrame(() => {
-          if (window.Chart && Chart.instances) {
-            Object.values(Chart.instances).forEach(c => {
-              try { c.resize(); } catch (e) {}
-            });
-          }
-        });
+        localStorage.setItem(TAB_STORAGE_KEY, btn.dataset.tab); // 記住這次切到的分頁，下次重整網頁時還原
+        replayTabAnimations(btn.dataset.tab);
       });
     });
 
@@ -1813,6 +1903,7 @@ function renderHtml(dataset) {
       return avgScore <= 3 ? '#ff6b6b' : '#c6f24e';
     }
 
+    fadeInCanvas(document.getElementById('matrixChart'), 700);
     const matrixChartInstance = new Chart(document.getElementById('matrixChart'), {
       type: 'scatter',
       data: {
@@ -1827,6 +1918,7 @@ function renderHtml(dataset) {
       options: {
           responsive: true,
           maintainAspectRatio: false,
+        animation: false, // 用外層 canvas 的 CSS 淡入取代，避免跟點點半徑動畫互相打架
         parsing: false,
         scales: {
           x: { title: { display: true, text: '被提及次數', color: '#9aa0ac' }, ticks: { color: '#9aa0ac' }, grid: { color: '#2a2e38' } },
@@ -2207,6 +2299,7 @@ function renderHtml(dataset) {
         scatterChart.destroy();
       }
 
+      fadeInCanvas(document.getElementById('commentScatterChart'), 700);
       scatterChart = new Chart(document.getElementById('commentScatterChart'), {
         type: 'scatter',
         data: {
@@ -2230,6 +2323,7 @@ function renderHtml(dataset) {
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          animation: false, // 用外層 canvas 的 CSS 淡入取代，避免跟點點半徑動畫互相打架
           parsing: false,
           scales: {
             y: {
@@ -2780,6 +2874,7 @@ function renderHtml(dataset) {
           options: {
             responsive: true,
             maintainAspectRatio: false,
+            animation: pointsThenLineAnimation(50),
             scales: {
               y: { min: 0, max: 5, ticks: { color: '#9aa0ac', font: { size: 10 } }, grid: { color: '#2a2e38' } },
               x: { ticks: { color: '#9aa0ac', font: { size: 9 }, maxRotation: 60, minRotation: 45 }, grid: { display: false } },
@@ -2978,6 +3073,7 @@ function renderHtml(dataset) {
       options: {
           responsive: true,
           maintainAspectRatio: false,
+        animation: pointsThenLineAnimation(35),
         scales: {
           y: { min: 0, max: 5, ticks: { color: '#9aa0ac' }, grid: { color: '#2a2e38' } },
           x: { ticks: { color: '#9aa0ac', maxRotation: 60, minRotation: 45 }, grid: { color: '#2a2e38' } },
@@ -3009,6 +3105,13 @@ function renderHtml(dataset) {
     }
     distChart('androidDistChart', dataset.androidDist, '#c6f24e');
     distChart('iosDistChart', dataset.iosDist, '#FF9500');
+
+    // ===== 所有圖表都建立完成，現在把剛才暫時的「有版面但看不見」樣式清乾淨，
+    //      恢復成正常的分頁顯示/隱藏規則（靠 .tab-panel.active 這個 class 控制）=====
+    allTabPanelsForInit.forEach((p) => {
+      p.style.display = '';
+      p.style.visibility = '';
+    });
   </script>
 </body>
 </html>`;
