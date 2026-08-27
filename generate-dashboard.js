@@ -227,7 +227,14 @@ function computeJourneyPainPoints(reviews) {
     const matched = reviews.filter((r) => r.categories.includes(item.category) && r.sentiment === 'negative');
     const android = matched.filter((r) => r.platform === 'android').length;
     const ios = matched.filter((r) => r.platform === 'ios').length;
-    return { ...item, count: matched.length, android, ios };
+
+    // 滿意度分數用「這個分類底下所有評論（不只負評）」的平均星等去換算，
+    // 不能只看負評數量，否則評論量大的分類會被誤判成「更不滿意」。
+    const allMatched = reviews.filter((r) => r.categories.includes(item.category) && typeof r.score === 'number');
+    const allCount = allMatched.length;
+    const avgScore = allCount > 0 ? allMatched.reduce((s, r) => s + r.score, 0) / allCount : null;
+
+    return { ...item, count: matched.length, android, ios, allCount, avgScore };
   });
 }
 
@@ -1280,7 +1287,10 @@ function renderHtml(dataset) {
   }
 
   /* ===== 整合式旅程痛點 tab ===== */
-  .jp-card-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:4px; }
+  .jp-card-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:24px; flex-wrap:wrap; margin-bottom:14px; }
+  .jp-card-head-title{ flex:1; min-width:220px; }
+  .jp-card-head-tools{ flex:0 0 auto; max-width:100%; }
+  .jp-info-toggle-row{ margin-bottom:4px; }
   .jp-info-toggle{ display:flex; align-items:center; gap:5px; background:var(--bg); border:1px solid var(--border); color:var(--muted); font-size:11px; font-family:inherit; padding:6px 11px; border-radius:20px; cursor:pointer; flex-shrink:0; white-space:nowrap; }
   .jp-info-toggle:hover{ color:var(--text); }
   .jp-info-toggle .jp-chev{ transition:transform .15s; font-size:9px; }
@@ -1309,16 +1319,14 @@ function renderHtml(dataset) {
   .jp-chip.active{ color:var(--text); border-color:currentColor; }
   .jp-dot{ width:9px; height:9px; border-radius:50%; }
 
-  .jp-layout{ display:flex; gap:20px; align-items:flex-start; }
-  .jp-left-col{ flex:2.3; min-width:0; }
-  .jp-right-col{ flex:1; min-width:280px; display:flex; flex-direction:column; gap:20px; }
+  .jp-board-section{ width:100%; }
+  .jp-charts-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:20px; margin-top:20px; }
   @media (max-width:1180px){
-    .jp-layout{ flex-direction:column; }
-    .jp-right-col{ width:100%; flex-direction:row; flex-wrap:wrap; }
-    .jp-right-col > div{ flex:1; min-width:300px; }
+    .jp-charts-grid{ grid-template-columns:repeat(2, 1fr); }
   }
-  .jp-panel{ background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }
-  .jp-panel h3{ font-size:13px; margin:0 0 2px; }
+  @media (max-width:720px){
+    .jp-charts-grid{ grid-template-columns:1fr; }
+  }
 
   .jp-board-wrap{ overflow-x:auto; padding-bottom:14px; }
   .jp-board{ min-width:1080px; position:relative; }
@@ -1348,9 +1356,15 @@ function renderHtml(dataset) {
   .jp-mini-bar-fill{ height:100%; border-radius:2px; }
   .jp-total-count{ font-size:9px; color:var(--muted); text-align:center; padding:4px 0 6px; }
 
-  .jp-heat-legend{ display:flex; align-items:center; gap:8px; font-size:11px; color:var(--muted); padding:10px 2px 4px; }
-  .jp-scale{ display:flex; height:10px; width:120px; border-radius:3px; overflow:hidden; }
-  .jp-scale div{ flex:1; }
+  .jp-satisfaction-cell{ background:var(--card); border:1px solid var(--border); border-radius:8px; min-height:64px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:8px 5px; }
+  .jp-satisfaction-score{ font-size:18px; font-weight:700; line-height:1; }
+  .jp-satisfaction-scale{ font-size:9px; color:var(--muted); margin-top:-2px; }
+  .jp-satisfaction-track{ width:80%; height:5px; background:var(--bg); border-radius:3px; overflow:hidden; margin-top:4px; }
+  .jp-satisfaction-fill{ height:100%; border-radius:3px; }
+
+  .jp-row-label.jp-row-label-stacked{ flex-direction:column; align-items:flex-start; justify-content:center; gap:2px; }
+  .jp-row-label-main{ font-weight:600; color:var(--text); }
+  .jp-row-sublabel{ font-size:8px; line-height:1.35; color:var(--muted); opacity:0.85; }
 
   .jp-collapsible{ overflow:hidden; transition:max-height .2s ease; max-height:0; flex:1; }
   .jp-collapsible.open{ max-height:80px; }
@@ -1720,10 +1734,34 @@ function renderHtml(dataset) {
   <div class="tab-panel" id="tab-journeypain">
     <div class="chart-card">
       <div class="jp-card-head">
-        <div>
+        <div class="jp-card-head-title">
           <h2 style="margin:0">互動式服務藍圖</h2>
           <div class="note" style="margin-top:4px;">點擊圓點查看該痛點的實際評論；點擊右側圖表的項目會反過來highlight對應階段</div>
         </div>
+        <div class="jp-card-head-tools">
+          <div class="jp-toolbar">
+            <div class="jp-legend-group">
+              <div class="jp-legend-item"><span class="jp-icon" style="background:var(--neg)">✕</span> 失敗點 F</div>
+              <div class="jp-legend-item"><span class="jp-icon" style="background:#ffd23f">D</span> 決策點 D</div>
+              <div class="jp-legend-item"><span class="jp-icon" style="background:#7ee27e">W</span> 等待點 W</div>
+            </div>
+            <div class="jp-divider-v"></div>
+            <div class="jp-filter-group" id="jpTypeFilters">
+              <label class="jp-chip active" data-type="F"><span class="jp-dot" style="background:var(--neg)"></span>顯示F</label>
+              <label class="jp-chip active" data-type="D"><span class="jp-dot" style="background:#ffd23f"></span>顯示D</label>
+              <label class="jp-chip active" data-type="W"><span class="jp-dot" style="background:#7ee27e"></span>顯示W</label>
+            </div>
+            <div class="jp-divider-v"></div>
+            <div class="jp-filter-group" id="jpPlatformFilters">
+              <label class="jp-chip active" data-platform="android"><span class="jp-dot" style="background:var(--android)"></span>Android</label>
+              <label class="jp-chip active" data-platform="ios"><span class="jp-dot" style="background:var(--ios)"></span>iOS</label>
+            </div>
+          </div>
+          <div class="note" style="margin-top:6px; text-align:right;">篩選同步套用到下方「流程複雜度×痛點密集度」與「痛點排行榜」</div>
+        </div>
+      </div>
+
+      <div class="jp-info-toggle-row">
         <button class="jp-info-toggle" id="jpInfoToggle"><span>📖 怎麼讀懂這張圖</span><span class="jp-chev">▾</span></button>
       </div>
 
@@ -1737,6 +1775,7 @@ function renderHtml(dataset) {
               <li><b>渠道</b>：使用者在這個階段是透過APP、實體車輛、還是客服管道接觸產品</li>
               <li><b>行為流程</b>：這個階段使用者實際做的事</li>
               <li><b>顧客行動</b>：熱力色階代表負評密集度，圓點代表個別痛點分類，大小＝評論數，點擊可看實際評論</li>
+              <li><b>滿意度</b>：該階段對應分類的平均星等換算成0~5分，0最不滿意、5最滿意</li>
             </ul>
           </div>
           <div class="jp-info-section">
@@ -1748,61 +1787,30 @@ function renderHtml(dataset) {
           </div>
           <div class="jp-info-section">
             <h4>③ 怎麼互動</h4>
-            <p>用篩選器（F/D/W顯示開關、Android/iOS）縮小範圍，會同步套用到藍圖、象限圖、排行榜三個區塊。點擊藍圖裡的圓點、排行榜項目，都會打開評論詳情抽屜；點擊象限圖的點或優先清單，會讓藍圖對應的階段亮起提示。</p>
+            <p>用右上角的篩選器（F/D/W顯示開關、Android/iOS）縮小範圍，會同步套用到藍圖、象限圖、排行榜三個區塊。點擊藍圖裡的圓點、排行榜項目，都會打開評論詳情抽屜；點擊象限圖的點或優先清單，會讓藍圖對應的階段亮起提示。</p>
             <p style="margin-top:8px; opacity:0.75;">⚠️ 目前F/D/W與階段的對應，是依現有評論分類做的第一版判斷，準確度以此為前提，建議實際檢視評論後調整 <code>JOURNEY_CATEGORY_MAP</code>（在 generate-dashboard.js 裡）。</p>
           </div>
         </div>
       </div>
 
-      <div class="jp-toolbar">
-        <div class="jp-legend-group">
-          <div class="jp-legend-item"><span class="jp-icon" style="background:var(--neg)">✕</span> 失敗點 F</div>
-          <div class="jp-legend-item"><span class="jp-icon" style="background:#ffd23f">D</span> 決策點 D</div>
-          <div class="jp-legend-item"><span class="jp-icon" style="background:#7ee27e">W</span> 等待點 W</div>
-        </div>
-        <div class="jp-divider-v"></div>
-        <div class="jp-filter-group" id="jpTypeFilters">
-          <label class="jp-chip active" data-type="F"><span class="jp-dot" style="background:var(--neg)"></span>顯示F</label>
-          <label class="jp-chip active" data-type="D"><span class="jp-dot" style="background:#ffd23f"></span>顯示D</label>
-          <label class="jp-chip active" data-type="W"><span class="jp-dot" style="background:#7ee27e"></span>顯示W</label>
-        </div>
-        <div class="jp-divider-v"></div>
-        <div class="jp-filter-group" id="jpPlatformFilters">
-          <label class="jp-chip active" data-platform="android"><span class="jp-dot" style="background:var(--android)"></span>Android</label>
-          <label class="jp-chip active" data-platform="ios"><span class="jp-dot" style="background:var(--ios)"></span>iOS</label>
-        </div>
+      <div class="jp-board-section">
+        <div class="jp-board-wrap"><div class="jp-board" id="jpBoard"></div></div>
+        <div class="jp-row jp-section-divider" id="jpFrontRowWrap"></div>
+        <div class="jp-row jp-section-divider" id="jpBackRowWrap"></div>
       </div>
-      <div class="note" style="margin:4px 0 14px;">篩選同步套用到右側兩個圖表</div>
+    </div>
 
-      <div class="jp-layout">
-        <div class="jp-left-col">
-          <div class="jp-board-wrap"><div class="jp-board" id="jpBoard"></div></div>
-          <div class="jp-heat-legend">
-            熱力色階（負評密度）：
-            <div class="jp-scale">
-              <div style="background:#26262a"></div><div style="background:#5b4a2a"></div>
-              <div style="background:#946b1f"></div><div style="background:#c98a1a"></div>
-              <div style="background:#e8621f"></div><div style="background:#e8321f"></div>
-            </div>
-            低 → 高　｜　圓點大小 = 該痛點評論數（篩選後）
-          </div>
-          <div class="jp-row jp-section-divider" id="jpFrontRowWrap"></div>
-          <div class="jp-row jp-section-divider" id="jpBackRowWrap"></div>
-        </div>
-
-        <div class="jp-right-col">
-          <div class="jp-panel">
-            <h3>流程複雜度 × 痛點密集度</h3>
-            <div class="note" style="margin:2px 0 8px;">X軸＝行為流程子步驟數，Y軸＝負評總則數。右上角＝優先重新設計候選</div>
-            <svg id="jpQuadChart" viewBox="0 0 380 300" width="100%"></svg>
-            <div class="jp-priority-list" id="jpPriorityList"></div>
-          </div>
-          <div class="jp-panel">
-            <h3>痛點排行榜</h3>
-            <div class="note" style="margin:2px 0 8px;">依篩選後負評則數排序，點擊可查看實際評論</div>
-            <div class="jp-pareto-list" id="jpParetoList"></div>
-          </div>
-        </div>
+    <div class="jp-charts-grid">
+      <div class="chart-card">
+        <h2 style="margin:0 0 2px; font-size:13px;">流程複雜度 × 痛點密集度</h2>
+        <div class="note" style="margin:2px 0 8px;">X軸＝行為流程子步驟數，Y軸＝負評總則數。右上角＝優先重新設計候選</div>
+        <svg id="jpQuadChart" viewBox="0 0 380 300" width="100%"></svg>
+        <div class="jp-priority-list" id="jpPriorityList"></div>
+      </div>
+      <div class="chart-card">
+        <h2 style="margin:0 0 2px; font-size:13px;">痛點排行榜</h2>
+        <div class="note" style="margin:2px 0 8px;">依篩選後負評則數排序，點擊可查看實際評論</div>
+        <div class="jp-pareto-list" id="jpParetoList"></div>
       </div>
     </div>
   </div>
@@ -2173,6 +2181,32 @@ function renderHtml(dataset) {
         return scale[idx];
       }
 
+      // 滿意度分數：用分類的平均星等（1~5星，不限負評）換算成0~5分（1星=0分，5星=5分），
+      // 同一階段有多個分類時，依各分類的評論則數加權平均。
+      function stageSatisfaction(stage) {
+        const pts = pointsFor(stage).filter(p => p.avgScore !== null && p.allCount > 0);
+        if (!pts.length) return null;
+        const totalCount = pts.reduce((s, p) => s + p.allCount, 0);
+        if (totalCount === 0) return null;
+        const weightedAvgStar = pts.reduce((s, p) => s + p.avgScore * p.allCount, 0) / totalCount;
+        return (weightedAvgStar - 1) / 4 * 5;
+      }
+      function satisfactionColor(score) {
+        // 0分=紅、2.5分=黃、5分=綠，線性漸層
+        const stops = [
+          { at: 0, color: [232, 50, 31] },
+          { at: 2.5, color: [232, 178, 31] },
+          { at: 5, color: [126, 226, 126] },
+        ];
+        let a = stops[0], b = stops[stops.length - 1];
+        for (let i = 0; i < stops.length - 1; i++) {
+          if (score >= stops[i].at && score <= stops[i + 1].at) { a = stops[i]; b = stops[i + 1]; break; }
+        }
+        const t = b.at === a.at ? 0 : (score - a.at) / (b.at - a.at);
+        const rgb = a.color.map((c, i) => Math.round(c + (b.color[i] - c) * t));
+        return 'rgb(' + rgb.join(',') + ')';
+      }
+
       function openJourneyDrawer(p) {
         const matched = dataset.allReviewsFlat.filter(r =>
           r.categories.includes(p.category) &&
@@ -2192,10 +2226,14 @@ function renderHtml(dataset) {
         });
       }
 
-      function buildRow(labelText, withDivider) {
+      function buildRow(labelText, withDivider, subLabel) {
         const row = document.createElement('div');
         row.className = 'jp-row' + (withDivider ? ' jp-section-divider' : '');
-        row.innerHTML = '<div class="jp-row-label"><span>' + labelText + '</span></div><div class="jp-grid"></div>';
+        const labelClass = subLabel ? 'jp-row-label jp-row-label-stacked' : 'jp-row-label';
+        const labelHtml = subLabel
+          ? '<span class="jp-row-label-main">' + labelText + '</span><span class="jp-row-sublabel">' + subLabel + '</span>'
+          : '<span>' + labelText + '</span>';
+        row.innerHTML = '<div class="' + labelClass + '">' + labelHtml + '</div><div class="jp-grid"></div>';
         return row;
       }
 
@@ -2245,7 +2283,7 @@ function renderHtml(dataset) {
         });
         board.appendChild(flowRow);
 
-        const actionRow = buildRow('顧客行動', true);
+        const actionRow = buildRow('顧客行動', true, '色深=負評密度｜大小=則數');
         const actionGrid = actionRow.querySelector('.jp-grid');
         const maxStageTotal = Math.max(1, ...stages.map(stageTotal));
         const maxPointCount = Math.max(1, ...visiblePoints().map(pointVisibleCount));
@@ -2276,6 +2314,25 @@ function renderHtml(dataset) {
           actionGrid.appendChild(cell);
         });
         board.appendChild(actionRow);
+
+        const satisfactionRow = buildRow('滿意度', true);
+        const satisfactionGrid = satisfactionRow.querySelector('.jp-grid');
+        stages.forEach(s => {
+          const score = stageSatisfaction(s);
+          const cell = document.createElement('div');
+          cell.className = 'jp-satisfaction-cell';
+          if (score === null) {
+            cell.innerHTML = '<div class="jp-no-data">無資料</div>';
+          } else {
+            const color = satisfactionColor(score);
+            cell.innerHTML =
+              '<div class="jp-satisfaction-score" style="color:' + color + '">' + score.toFixed(1) + '</div>' +
+              '<div class="jp-satisfaction-scale">／5</div>' +
+              '<div class="jp-satisfaction-track"><div class="jp-satisfaction-fill" style="width:' + (score / 5 * 100) + '%; background:' + color + ';"></div></div>';
+          }
+          satisfactionGrid.appendChild(cell);
+        });
+        board.appendChild(satisfactionRow);
 
         board.querySelectorAll('.jp-point[data-code]').forEach(d => {
           d.addEventListener('click', () => {
