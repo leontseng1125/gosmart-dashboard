@@ -152,6 +152,85 @@ function categoryToStage(category) {
   return '帳號與其他';
 }
 
+// ===== 「整合式旅程痛點」tab 專用：服務藍圖 14 階段 + F/D/W 分類 =====
+// ⚠️ 這份對照表是依現有 20 個分類的語意做的第一版草稿判斷，
+//    不是逐則評論分類，而是「這個分類整體來說最像哪個階段、哪種類型」的一次性判斷。
+//    請 Kai 實際看過評論內容後再調整 stage / type，尤其標了「?」的幾筆已知比較沒把握。
+const JOURNEY_STAGES = ['選擇品牌','會員註冊','審核身份','搜尋欲租車輛','預定車輛','等待取車','前往取車','取車中','使用中','準備還車','還車','付款','還車後服務','狀況排除'];
+
+const JOURNEY_MACRO_GROUPS = [
+  { label: '用車前', span: 6 },
+  { label: '用車中', span: 6 },
+  { label: '用車後', span: 1 },
+  { label: '客服',   span: 1 },
+];
+
+const JOURNEY_CHANNELS = {
+  '選擇品牌':'官網/APP','會員註冊':'APP','審核身份':'APP','搜尋欲租車輛':'APP','預定車輛':'APP',
+  '等待取車':'APP','前往取車':'APP','取車中':'APP/實體車輛','使用中':'APP/實體車輛','準備還車':'APP/實體車輛',
+  '還車':'APP/實體車輛','付款':'APP','還車後服務':'APP','狀況排除':'APP/電話/Line/Chatbot',
+};
+
+const JOURNEY_FLOW_TEXT = {
+  '選擇品牌':'學習使用方式 → 與競品比較差異',
+  '會員註冊':'註冊 → 付款完成',
+  '審核身份':'審核',
+  '搜尋欲租車輛':'搜尋車輛 → 查看詳情',
+  '預定車輛':'定車 → 預授權費用',
+  '等待取車':'確認租車資訊',
+  '前往取車':'前往取車地點',
+  '取車中':'檢查車輛 → 拍照存證',
+  '使用中':'發動 → 熟悉車輛 → 離開停車場 → 控制車輛',
+  '準備還車':'找站點與車位 → 抵達停車場 → 即將逾時',
+  '還車':'進入停車場 → 熄火 → 檢查車輛 → 拍照存證 → 車格與環境照',
+  '付款':'發票明細 → 選擇付款方式 → 付款完成',
+  '還車後服務':'問卷回饋 → 評價 → 推廣',
+  '狀況排除':'發生異常狀況 → 進線客服 → 排除問題',
+};
+
+// 20個既有分類 → 14階段 + F/D/W類型（草稿，待確認）
+const JOURNEY_CATEGORY_MAP = [
+  { category: '定車相關',       stage: '預定車輛',     type: 'F', label: '定車/預約問題' },
+  { category: '取車相關',       stage: '取車中',       type: 'F', label: '取車問題' },
+  { category: '還車相關',       stage: '還車',         type: 'F', label: '還車問題' },
+  { category: '客服',           stage: '狀況排除',     type: 'F', label: '客服無回應/未解決' }, // ? 也可能偏向W(等待回覆)，待確認
+  { category: '審核',           stage: '審核身份',     type: 'D', label: '審核決策/條件不清' },
+  { category: '付款',           stage: '付款',         type: 'F', label: '付款/扣款失敗' },
+  { category: '站點與車輛數',   stage: '搜尋欲租車輛', type: 'F', label: '找不到可租車輛' },
+  { category: '停權',           stage: '狀況排除',     type: 'D', label: '停權決策' },
+  { category: '基本資料',       stage: '會員註冊',     type: 'F', label: '基本資料問題' },
+  { category: '系統',           stage: '使用中',       type: 'F', label: '系統錯誤/閃退' },
+  { category: '車輛設備',       stage: '使用中',       type: 'F', label: '車輛設備問題' },
+  { category: '優惠碼/優惠券',  stage: '付款',         type: 'F', label: '優惠碼失效' },
+  { category: '帳號',           stage: '會員註冊',     type: 'F', label: '帳號問題' },
+  { category: '車損拍照',       stage: '還車',         type: 'F', label: '車損照片爭議' },
+  { category: '通知',           stage: '準備還車',     type: 'W', label: '提醒/通知時機' }, // ? 通知類別橫跨多階段，暫歸還車前提醒
+  { category: '軟體更新',       stage: '使用中',       type: 'F', label: '軟體更新問題' },
+  { category: 'icon設計',       stage: '使用中',       type: 'F', label: 'icon/介面設計' },
+  { category: '投保',           stage: '預定車輛',     type: 'D', label: '投保決策' },
+  { category: '搜尋',           stage: '搜尋欲租車輛', type: 'F', label: '搜尋功能問題' },
+  { category: '更改密碼',       stage: '會員註冊',     type: 'F', label: '改密碼問題' },
+  { category: '共同承租人',     stage: '會員註冊',     type: 'D', label: '共同承租人審核' },
+];
+
+// 依 F/D/W 類型自動編號（F1, F2... D1... W1...），不強行對應論文原圖的代碼
+(function assignJourneyCodes() {
+  const counters = { F: 0, D: 0, W: 0 };
+  JOURNEY_CATEGORY_MAP.forEach((item) => {
+    counters[item.type] += 1;
+    item.code = item.type + counters[item.type];
+  });
+})();
+
+function computeJourneyPainPoints(reviews) {
+  return JOURNEY_CATEGORY_MAP.map((item) => {
+    const matched = reviews.filter((r) => r.categories.includes(item.category) && r.sentiment === 'negative');
+    const android = matched.filter((r) => r.platform === 'android').length;
+    const ios = matched.filter((r) => r.platform === 'ios').length;
+    return { ...item, count: matched.length, android, ios };
+  });
+}
+
 function buildDataset(dailyRuns, fullHistory, manualReviews) {
   const androidSeen = new Map();
 
@@ -634,6 +713,7 @@ function buildDataset(dailyRuns, fullHistory, manualReviews) {
     trendChanges,
     recentMonths6,
     wordFrequency,
+    journeyPainPoints: computeJourneyPainPoints(allReviewsFlatWithManual),
   };
 }
 
@@ -1198,6 +1278,110 @@ function renderHtml(dataset) {
     }
     .review-drawer.open { transform: translateY(0); }
   }
+
+  /* ===== 整合式旅程痛點 tab ===== */
+  .jp-card-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:4px; }
+  .jp-info-toggle{ display:flex; align-items:center; gap:5px; background:var(--bg); border:1px solid var(--border); color:var(--muted); font-size:11px; font-family:inherit; padding:6px 11px; border-radius:20px; cursor:pointer; flex-shrink:0; white-space:nowrap; }
+  .jp-info-toggle:hover{ color:var(--text); }
+  .jp-info-toggle .jp-chev{ transition:transform .15s; font-size:9px; }
+  .jp-info-toggle.open .jp-chev{ transform:rotate(180deg); }
+  .jp-info-box{ max-height:0; overflow:hidden; transition:max-height .25s ease; background:var(--bg); border:1px solid var(--border); border-radius:10px; }
+  .jp-info-box.open{ max-height:900px; margin:10px 0 14px; }
+  .jp-info-box-inner{ padding:14px 16px; }
+  .jp-info-section{ margin-bottom:14px; }
+  .jp-info-section:last-child{ margin-bottom:0; }
+  .jp-info-section h4{ font-size:12px; margin:0 0 6px; color:var(--text); }
+  .jp-info-section p{ font-size:11.5px; line-height:1.7; color:var(--muted); margin:0 0 6px; }
+  .jp-info-list{ margin:0; padding-left:18px; font-size:11.5px; line-height:1.8; color:var(--muted); }
+  .jp-info-list b{ color:var(--text); }
+  .jp-type-row{ display:flex; align-items:flex-start; gap:8px; margin-bottom:7px; }
+  .jp-type-row:last-child{ margin-bottom:0; }
+  .jp-type-text{ font-size:11.5px; line-height:1.6; color:var(--muted); }
+  .jp-type-text b{ color:var(--text); font-weight:600; }
+
+  .jp-toolbar{ display:flex; flex-wrap:wrap; gap:18px; align-items:center; background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:12px 16px; font-size:12.5px; }
+  .jp-legend-group{ display:flex; align-items:center; gap:10px; }
+  .jp-legend-item{ display:flex; align-items:center; gap:5px; color:var(--muted); }
+  .jp-icon{ width:16px; height:16px; border-radius:4px; display:inline-flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; color:#111; }
+  .jp-divider-v{ width:1px; height:20px; background:var(--border); }
+  .jp-filter-group{ display:flex; align-items:center; gap:8px; }
+  .jp-chip{ display:flex; align-items:center; gap:5px; padding:4px 10px; border-radius:14px; border:1px solid var(--border); cursor:pointer; color:var(--muted); user-select:none; background:var(--card); }
+  .jp-chip.active{ color:var(--text); border-color:currentColor; }
+  .jp-dot{ width:9px; height:9px; border-radius:50%; }
+
+  .jp-layout{ display:flex; gap:20px; align-items:flex-start; }
+  .jp-left-col{ flex:2.3; min-width:0; }
+  .jp-right-col{ flex:1; min-width:280px; display:flex; flex-direction:column; gap:20px; }
+  @media (max-width:1180px){
+    .jp-layout{ flex-direction:column; }
+    .jp-right-col{ width:100%; flex-direction:row; flex-wrap:wrap; }
+    .jp-right-col > div{ flex:1; min-width:300px; }
+  }
+  .jp-panel{ background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }
+  .jp-panel h3{ font-size:13px; margin:0 0 2px; }
+
+  .jp-board-wrap{ overflow-x:auto; padding-bottom:14px; }
+  .jp-board{ min-width:1080px; position:relative; }
+  .jp-macro-divider{ position:absolute; top:0; width:1px; background:rgba(255,255,255,0.12); pointer-events:none; z-index:1; }
+  .jp-row{ display:flex; gap:8px; align-items:stretch; padding:12px 0; }
+  .jp-row.jp-section-divider{ border-top:1px solid rgba(255,255,255,0.07); }
+  .jp-row-label{ flex:0 0 82px; display:flex; align-items:center; justify-content:space-between; font-size:11px; color:var(--muted); padding-left:2px; }
+  .jp-row-label .jp-arrow{ cursor:pointer; color:var(--muted); font-size:12px; transition:transform .15s, color .15s; padding:4px; }
+  .jp-row-label .jp-arrow:hover{ color:var(--text); }
+  .jp-row-label .jp-arrow.open{ transform:rotate(180deg); }
+  .jp-grid{ display:grid; grid-template-columns:repeat(14,1fr); gap:6px; flex:1; }
+
+  .jp-macro-cell{ border-radius:6px; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; min-height:32px; letter-spacing:0.04em; color:#fff; background:#2f6fed; }
+  .jp-stage-cell{ background:#3a4560; border-radius:6px; color:#fff; font-size:9.5px; font-weight:600; text-align:center; display:flex; align-items:center; justify-content:center; min-height:36px; padding:4px 2px; transition:box-shadow .3s; }
+  .jp-stage-cell.flash{ box-shadow:0 0 0 2px var(--android); }
+  .jp-channel-cell{ font-size:9px; color:var(--muted); text-align:center; display:flex; align-items:center; justify-content:center; min-height:20px; }
+  .jp-flow-cell{ font-size:9px; color:var(--muted); text-align:center; display:flex; align-items:center; justify-content:center; line-height:1.35; padding:5px 3px; min-height:40px; }
+
+  .jp-action-cell{ background:var(--card); border:1px solid var(--border); border-radius:8px; min-height:96px; display:flex; flex-direction:column; justify-content:flex-end; padding:8px 5px 0; position:relative; overflow:hidden; }
+  .jp-action-cell.jp-empty-stage{ opacity:0.45; }
+  .jp-action-top{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; min-height:34px; }
+  .jp-no-data{ font-size:9px; color:var(--muted); }
+  .jp-dots{ display:flex; flex-wrap:wrap; gap:3px; justify-content:center; }
+  .jp-point{ border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:7.5px; font-weight:700; color:#111; cursor:pointer; border:1.5px solid rgba(255,255,255,0.25); transition:transform .12s; }
+  .jp-point:hover{ transform:scale(1.18); }
+  .jp-mini-bar-track{ width:100%; height:6px; background:var(--bg); border-radius:2px; overflow:hidden; margin-top:6px; }
+  .jp-mini-bar-fill{ height:100%; border-radius:2px; }
+  .jp-total-count{ font-size:9px; color:var(--muted); text-align:center; padding:4px 0 6px; }
+
+  .jp-heat-legend{ display:flex; align-items:center; gap:8px; font-size:11px; color:var(--muted); padding:10px 2px 4px; }
+  .jp-scale{ display:flex; height:10px; width:120px; border-radius:3px; overflow:hidden; }
+  .jp-scale div{ flex:1; }
+
+  .jp-collapsible{ overflow:hidden; transition:max-height .2s ease; max-height:0; flex:1; }
+  .jp-collapsible.open{ max-height:80px; }
+  .jp-front-cell, .jp-back-cell{ background:var(--card); border:1px solid var(--border); border-radius:6px; min-height:40px; display:flex; align-items:center; justify-content:center; font-size:9px; color:var(--muted); text-align:center; padding:4px; }
+  .jp-back-cell.jp-empty{ opacity:0.25; }
+
+  .jp-quad-label{ font-size:9.5px; fill:var(--muted); }
+  .jp-quad-point{ cursor:pointer; }
+  .jp-quad-point circle{ transition:r .12s, stroke-width .12s; }
+  .jp-quad-point:hover circle{ stroke:#fff; stroke-width:1.5; }
+  .jp-quad-point text{ font-size:8.5px; fill:var(--text); font-weight:600; pointer-events:none; }
+  .jp-quad-axis{ font-size:9.5px; fill:var(--muted); }
+  .jp-quad-line{ stroke:var(--border); stroke-width:1; }
+  .jp-quad-grid{ stroke:var(--border); stroke-width:1; stroke-dasharray:3 3; opacity:0.5; }
+  .jp-priority-list{ display:flex; flex-direction:column; gap:6px; margin-top:10px; }
+  .jp-priority-item{ display:flex; align-items:center; gap:8px; background:var(--card); border-radius:8px; padding:7px 9px; cursor:pointer; }
+  .jp-priority-item:hover{ outline:1px solid var(--border); }
+  .jp-priority-rank{ width:18px; height:18px; border-radius:50%; background:var(--neg); color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .jp-priority-name{ font-size:11.5px; font-weight:600; flex:1; }
+  .jp-priority-meta{ font-size:10px; color:var(--muted); }
+
+  .jp-pareto-row{ cursor:pointer; margin-bottom:10px; }
+  .jp-pareto-row:last-child{ margin-bottom:0; }
+  .jp-pareto-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
+  .jp-pareto-rank{ font-size:10px; color:var(--muted); margin-right:6px; }
+  .jp-pareto-code{ font-size:11px; font-weight:700; }
+  .jp-pareto-label{ font-size:10.5px; color:var(--muted); }
+  .jp-pareto-count{ font-size:11px; font-weight:700; color:var(--text); }
+  .jp-pareto-track{ width:100%; height:8px; background:var(--bg); border-radius:3px; overflow:hidden; }
+  .jp-pareto-fill{ height:100%; border-radius:3px; }
+  .jp-pareto-pct{ font-size:9.5px; color:var(--muted); margin-top:2px; }
 </style>
 </head>
 <body>
@@ -1225,6 +1409,7 @@ function renderHtml(dataset) {
     <button class="tab-btn" data-tab="version">版本</button>
     <button class="tab-btn" data-tab="ratings">評分</button>
     <button class="tab-btn" data-tab="favorites">收藏</button>
+    <button class="tab-btn" data-tab="journeypain">整合式旅程痛點</button>
   </div>
 
   <div class="tab-panel active" id="tab-comments">
@@ -1532,8 +1717,134 @@ function renderHtml(dataset) {
     </div>
   </div>
 
+  <div class="tab-panel" id="tab-journeypain">
+    <div class="chart-card">
+      <div class="jp-card-head">
+        <div>
+          <h2 style="margin:0">互動式服務藍圖</h2>
+          <div class="note" style="margin-top:4px;">點擊圓點查看該痛點的實際評論；點擊右側圖表的項目會反過來highlight對應階段</div>
+        </div>
+        <button class="jp-info-toggle" id="jpInfoToggle"><span>📖 怎麼讀懂這張圖</span><span class="jp-chev">▾</span></button>
+      </div>
+
+      <div class="jp-info-box" id="jpInfoBox">
+        <div class="jp-info-box-inner">
+          <div class="jp-info-section">
+            <h4>① 圖表結構怎麼看</h4>
+            <ul class="jp-info-list">
+              <li><b>藍色大階段</b>：用車前／用車中／用車後／客服，旅程的四個大區塊</li>
+              <li><b>階段</b>：14個細部子階段（例如「取車中」「還車」）</li>
+              <li><b>渠道</b>：使用者在這個階段是透過APP、實體車輛、還是客服管道接觸產品</li>
+              <li><b>行為流程</b>：這個階段使用者實際做的事</li>
+              <li><b>顧客行動</b>：熱力色階代表負評密集度，圓點代表個別痛點分類，大小＝評論數，點擊可看實際評論</li>
+            </ul>
+          </div>
+          <div class="jp-info-section">
+            <h4>② 為什麼要分 F / D / W</h4>
+            <p>同一個階段的抱怨，卡住的「原因性質」不同，該做的事也不一樣：</p>
+            <div class="jp-type-row"><span class="jp-icon" style="background:var(--neg)">✕</span><span class="jp-type-text"><b>失敗點 F</b>：功能真的壞了或流程斷裂，行動是「修」——通常是工程要處理的bug</span></div>
+            <div class="jp-type-row"><span class="jp-icon" style="background:#ffd23f">D</span><span class="jp-type-text"><b>決策點 D</b>：系統要判斷放不放行，抱怨常來自「規則不透明」，行動是「說清楚規則」而不是修bug</span></div>
+            <div class="jp-type-row"><span class="jp-icon" style="background:#7ee27e">W</span><span class="jp-type-text"><b>等待點 W</b>：東西沒壞，只是不知道要等多久，行動是「加進度／狀態回饋」</span></div>
+          </div>
+          <div class="jp-info-section">
+            <h4>③ 怎麼互動</h4>
+            <p>用篩選器（F/D/W顯示開關、Android/iOS）縮小範圍，會同步套用到藍圖、象限圖、排行榜三個區塊。點擊藍圖裡的圓點、排行榜項目，都會打開評論詳情抽屜；點擊象限圖的點或優先清單，會讓藍圖對應的階段亮起提示。</p>
+            <p style="margin-top:8px; opacity:0.75;">⚠️ 目前F/D/W與階段的對應，是依現有評論分類做的第一版判斷，準確度以此為前提，建議實際檢視評論後調整 <code>JOURNEY_CATEGORY_MAP</code>（在 generate-dashboard.js 裡）。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="jp-toolbar">
+        <div class="jp-legend-group">
+          <div class="jp-legend-item"><span class="jp-icon" style="background:var(--neg)">✕</span> 失敗點 F</div>
+          <div class="jp-legend-item"><span class="jp-icon" style="background:#ffd23f">D</span> 決策點 D</div>
+          <div class="jp-legend-item"><span class="jp-icon" style="background:#7ee27e">W</span> 等待點 W</div>
+        </div>
+        <div class="jp-divider-v"></div>
+        <div class="jp-filter-group" id="jpTypeFilters">
+          <label class="jp-chip active" data-type="F"><span class="jp-dot" style="background:var(--neg)"></span>顯示F</label>
+          <label class="jp-chip active" data-type="D"><span class="jp-dot" style="background:#ffd23f"></span>顯示D</label>
+          <label class="jp-chip active" data-type="W"><span class="jp-dot" style="background:#7ee27e"></span>顯示W</label>
+        </div>
+        <div class="jp-divider-v"></div>
+        <div class="jp-filter-group" id="jpPlatformFilters">
+          <label class="jp-chip active" data-platform="android"><span class="jp-dot" style="background:var(--android)"></span>Android</label>
+          <label class="jp-chip active" data-platform="ios"><span class="jp-dot" style="background:var(--ios)"></span>iOS</label>
+        </div>
+      </div>
+      <div class="note" style="margin:4px 0 14px;">篩選同步套用到右側兩個圖表</div>
+
+      <div class="jp-layout">
+        <div class="jp-left-col">
+          <div class="jp-board-wrap"><div class="jp-board" id="jpBoard"></div></div>
+          <div class="jp-heat-legend">
+            熱力色階（負評密度）：
+            <div class="jp-scale">
+              <div style="background:#26262a"></div><div style="background:#5b4a2a"></div>
+              <div style="background:#946b1f"></div><div style="background:#c98a1a"></div>
+              <div style="background:#e8621f"></div><div style="background:#e8321f"></div>
+            </div>
+            低 → 高　｜　圓點大小 = 該痛點評論數（篩選後）
+          </div>
+          <div class="jp-row jp-section-divider" id="jpFrontRowWrap"></div>
+          <div class="jp-row jp-section-divider" id="jpBackRowWrap"></div>
+        </div>
+
+        <div class="jp-right-col">
+          <div class="jp-panel">
+            <h3>流程複雜度 × 痛點密集度</h3>
+            <div class="note" style="margin:2px 0 8px;">X軸＝行為流程子步驟數，Y軸＝負評總則數。右上角＝優先重新設計候選</div>
+            <svg id="jpQuadChart" viewBox="0 0 380 300" width="100%"></svg>
+            <div class="jp-priority-list" id="jpPriorityList"></div>
+          </div>
+          <div class="jp-panel">
+            <h3>痛點排行榜</h3>
+            <div class="note" style="margin:2px 0 8px;">依篩選後負評則數排序，點擊可查看實際評論</div>
+            <div class="jp-pareto-list" id="jpParetoList"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     const dataset = ${dataJson};
+
+    // ===== 整合式旅程痛點 tab：靜態結構設定（來自論文服務藍圖，非資料運算結果） =====
+    const JOURNEY_STAGES_CLIENT = ['選擇品牌','會員註冊','審核身份','搜尋欲租車輛','預定車輛','等待取車','前往取車','取車中','使用中','準備還車','還車','付款','還車後服務','狀況排除'];
+    const JOURNEY_MACRO_GROUPS_CLIENT = [
+      { label: '用車前', span: 6 },
+      { label: '用車中', span: 6 },
+      { label: '用車後', span: 1 },
+      { label: '客服',   span: 1 },
+    ];
+    const JOURNEY_CHANNELS_CLIENT = {
+      '選擇品牌':'官網/APP','會員註冊':'APP','審核身份':'APP','搜尋欲租車輛':'APP','預定車輛':'APP',
+      '等待取車':'APP','前往取車':'APP','取車中':'APP/實體車輛','使用中':'APP/實體車輛','準備還車':'APP/實體車輛',
+      '還車':'APP/實體車輛','付款':'APP','還車後服務':'APP','狀況排除':'APP/電話/Line/Chatbot',
+    };
+    const JOURNEY_FLOW_TEXT_CLIENT = {
+      '選擇品牌':'學習使用方式 → 與競品比較差異',
+      '會員註冊':'註冊 → 付款完成',
+      '審核身份':'審核',
+      '搜尋欲租車輛':'搜尋車輛 → 查看詳情',
+      '預定車輛':'定車 → 預授權費用',
+      '等待取車':'確認租車資訊',
+      '前往取車':'前往取車地點',
+      '取車中':'檢查車輛 → 拍照存證',
+      '使用中':'發動 → 熟悉車輛 → 離開停車場 → 控制車輛',
+      '準備還車':'找站點與車位 → 抵達停車場 → 即將逾時',
+      '還車':'進入停車場 → 熄火 → 檢查車輛 → 拍照存證 → 車格與環境照',
+      '付款':'發票明細 → 選擇付款方式 → 付款完成',
+      '還車後服務':'問卷回饋 → 評價 → 推廣',
+      '狀況排除':'發生異常狀況 → 進線客服 → 排除問題',
+    };
+    const JOURNEY_STEPS_CLIENT = {
+      '選擇品牌':2,'會員註冊':2,'審核身份':1,'搜尋欲租車輛':2,'預定車輛':2,'等待取車':1,'前往取車':1,
+      '取車中':2,'使用中':4,'準備還車':3,'還車':5,'付款':3,'還車後服務':3,'狀況排除':3
+    };
+    const JOURNEY_FRONT_LABELS_CLIENT = { '選擇品牌':'','會員註冊':'註冊介面','審核身份':'審核介面','搜尋欲租車輛':'站點/地圖','預定車輛':'車輛資訊','等待取車':'訂單','前往取車':'站點/導航','取車中':'相機','使用中':'車輛控制','準備還車':'站點/導航','還車':'車輛檢查','付款':'金流方式','還車後服務':'問卷','狀況排除':'客服劇本' };
+    const JOURNEY_BACK_LABELS_CLIENT = { '選擇品牌':'','會員註冊':'會員系統','審核身份':'AI/人工審核','搜尋欲租車輛':'訂單系統','預定車輛':'第三方支付','等待取車':'','前往取車':'','取車中':'','使用中':'車輛監控系統','準備還車':'車輛監控','還車':'訂單系統','付款':'第三方支付','還車後服務':'CRM','狀況排除':'客服系統' };
 
     // ===== 記住目前分頁：重新整理網頁時停留在原本的分頁，不要都跳回「評論」 =====
     // 在任何圖表建立之前就先切換好分頁，這樣被還原的分頁一開始就是「可見」狀態，
@@ -1827,6 +2138,321 @@ function renderHtml(dataset) {
         const el = document.getElementById('matrixChart');
         if (el) fadeInCanvas(el, 700);
       }
+      if (tabKey === 'journeypain' && window.jpRedrawDividers) {
+        window.jpRedrawDividers();
+      }
+    }
+
+    // ===== 整合式旅程痛點 tab =====
+    try {
+    (function () {
+      const stages = JOURNEY_STAGES_CLIENT;
+      const macroGroups = JOURNEY_MACRO_GROUPS_CLIENT;
+      const channels = JOURNEY_CHANNELS_CLIENT;
+      const flowText = JOURNEY_FLOW_TEXT_CLIENT;
+      const stepsMap = JOURNEY_STEPS_CLIENT;
+      const points = dataset.journeyPainPoints; // [{category,stage,type,label,code,count,android,ios}]
+
+      const typeColor = { F: 'var(--neg)', D: '#ffd23f', W: '#7ee27e' };
+      const typeName = { F: '失敗點', D: '決策點', W: '等待點' };
+
+      let activeTypes = new Set(['F', 'D', 'W']);
+      let activePlatforms = new Set(['android', 'ios']);
+
+      function visiblePoints() { return points.filter(p => activeTypes.has(p.type)); }
+      function pointsFor(stage) { return visiblePoints().filter(p => p.stage === stage); }
+      function pointVisibleCount(p) {
+        const a = activePlatforms.has('android') ? p.android : 0;
+        const i = activePlatforms.has('ios') ? p.ios : 0;
+        return a + i;
+      }
+      function stageTotal(stage) { return pointsFor(stage).reduce((s, p) => s + pointVisibleCount(p), 0); }
+      function heatColor(ratio) {
+        const scale = ['#26262a', '#5b4a2a', '#946b1f', '#c98a1a', '#e8621f', '#e8321f'];
+        const idx = Math.min(scale.length - 1, Math.floor(ratio * scale.length));
+        return scale[idx];
+      }
+
+      function openJourneyDrawer(p) {
+        const matched = dataset.allReviewsFlat.filter(r =>
+          r.categories.includes(p.category) &&
+          r.sentiment === 'negative' &&
+          activePlatforms.has(r.platform)
+        );
+        openReviewDrawer(p.code + ' · ' + p.label, '階段：' + p.stage + '／' + typeName[p.type] + '　共 ' + matched.length + ' 則', matched);
+      }
+
+      function highlightStage(stage) {
+        document.querySelectorAll('.jp-stage-cell').forEach(el => {
+          if (el.dataset.stage === stage) {
+            el.classList.add('flash');
+            el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+            setTimeout(() => el.classList.remove('flash'), 1200);
+          }
+        });
+      }
+
+      function buildRow(labelText, withDivider) {
+        const row = document.createElement('div');
+        row.className = 'jp-row' + (withDivider ? ' jp-section-divider' : '');
+        row.innerHTML = '<div class="jp-row-label"><span>' + labelText + '</span></div><div class="jp-grid"></div>';
+        return row;
+      }
+
+      function renderBoard() {
+        const board = document.getElementById('jpBoard');
+        board.innerHTML = '';
+
+        const macroRow = buildRow('', false);
+        const macroGrid = macroRow.querySelector('.jp-grid');
+        macroGroups.forEach(g => {
+          const cell = document.createElement('div');
+          cell.className = 'jp-macro-cell';
+          cell.style.gridColumn = 'span ' + g.span;
+          cell.textContent = g.label;
+          macroGrid.appendChild(cell);
+        });
+        board.appendChild(macroRow);
+
+        const stageRow = buildRow('階段', true);
+        const stageGrid = stageRow.querySelector('.jp-grid');
+        stages.forEach(s => {
+          const cell = document.createElement('div');
+          cell.className = 'jp-stage-cell';
+          cell.dataset.stage = s;
+          cell.textContent = s;
+          stageGrid.appendChild(cell);
+        });
+        board.appendChild(stageRow);
+
+        const chRow = buildRow('渠道', true);
+        const chGrid = chRow.querySelector('.jp-grid');
+        stages.forEach(s => {
+          const cell = document.createElement('div');
+          cell.className = 'jp-channel-cell';
+          cell.textContent = channels[s];
+          chGrid.appendChild(cell);
+        });
+        board.appendChild(chRow);
+
+        const flowRow = buildRow('行為流程', true);
+        const flowGrid = flowRow.querySelector('.jp-grid');
+        stages.forEach(s => {
+          const cell = document.createElement('div');
+          cell.className = 'jp-flow-cell';
+          cell.textContent = flowText[s] || '—';
+          flowGrid.appendChild(cell);
+        });
+        board.appendChild(flowRow);
+
+        const actionRow = buildRow('顧客行動', true);
+        const actionGrid = actionRow.querySelector('.jp-grid');
+        const maxStageTotal = Math.max(1, ...stages.map(stageTotal));
+        const maxPointCount = Math.max(1, ...visiblePoints().map(pointVisibleCount));
+
+        stages.forEach(s => {
+          const total = stageTotal(s);
+          const pts = pointsFor(s);
+          const ratio = total / maxStageTotal;
+          const cell = document.createElement('div');
+          const hasAnyMapping = points.some(p => p.stage === s);
+          cell.className = 'jp-action-cell' + (!hasAnyMapping ? ' jp-empty-stage' : '');
+          cell.style.background = pts.length ? heatColor(ratio) : 'var(--card)';
+
+          if (!hasAnyMapping) {
+            cell.innerHTML = '<div class="jp-action-top"><div class="jp-no-data">無對應分類</div></div>' +
+              '<div class="jp-mini-bar-track"><div class="jp-mini-bar-fill" style="width:0%"></div></div>' +
+              '<div class="jp-total-count">—</div>';
+          } else {
+            const dotsHtml = pts.map(p => {
+              const vc = pointVisibleCount(p);
+              const size = 13 + Math.round((vc / maxPointCount) * 13);
+              return '<div class="jp-point" data-code="' + p.code + '" style="width:' + size + 'px;height:' + size + 'px;background:' + typeColor[p.type] + ';font-size:' + Math.max(7, size * 0.38) + 'px;">' + p.code + '</div>';
+            }).join('');
+            cell.innerHTML = '<div class="jp-action-top"><div class="jp-dots">' + (dotsHtml || '<span class="jp-no-data">已篩選為空</span>') + '</div></div>' +
+              '<div class="jp-mini-bar-track"><div class="jp-mini-bar-fill" style="width:' + (ratio * 100) + '%; background:' + heatColor(ratio) + '; filter:brightness(1.5);"></div></div>' +
+              '<div class="jp-total-count">共 ' + total + ' 則</div>';
+          }
+          actionGrid.appendChild(cell);
+        });
+        board.appendChild(actionRow);
+
+        board.querySelectorAll('.jp-point[data-code]').forEach(d => {
+          d.addEventListener('click', () => {
+            const p = points.find(pt => pt.code === d.dataset.code);
+            if (p) openJourneyDrawer(p);
+          });
+        });
+
+        drawDividers(board, stageRow);
+      }
+
+      function drawDividers(board, stageRow) {
+        board.querySelectorAll('.jp-macro-divider').forEach(el => el.remove());
+        const cells = stageRow.querySelector('.jp-grid').children;
+        const boardRect = board.getBoundingClientRect();
+        const boardHeight = board.scrollHeight;
+        if (boardRect.width === 0) return; // 版面還量不到寬度，先跳過，稍後resize/切分頁時會重算
+        let cumulative = 0;
+        const boundaries = [];
+        macroGroups.slice(0, -1).forEach(g => { cumulative += g.span; boundaries.push(cumulative); });
+        boundaries.forEach(b => {
+          const cellBefore = cells[b - 1], cellAfter = cells[b];
+          if (!cellBefore || !cellAfter) return;
+          const rectBefore = cellBefore.getBoundingClientRect();
+          const rectAfter = cellAfter.getBoundingClientRect();
+          const x = (rectBefore.right + rectAfter.left) / 2 - boardRect.left;
+          const line = document.createElement('div');
+          line.className = 'jp-macro-divider';
+          line.style.left = x + 'px';
+          line.style.height = boardHeight + 'px';
+          board.appendChild(line);
+        });
+      }
+
+      function buildIndependentRow(container, labelText, valuesMap, cellClass) {
+        container.innerHTML = '';
+        const label = document.createElement('div');
+        label.className = 'jp-row-label';
+        label.innerHTML = '<span>' + labelText + '</span><span class="jp-arrow">▾</span>';
+        const gridWrap = document.createElement('div');
+        gridWrap.className = 'jp-collapsible';
+        const grid = document.createElement('div');
+        grid.className = 'jp-grid';
+        stages.forEach(s => {
+          const val = valuesMap[s];
+          const cell = document.createElement('div');
+          cell.className = cellClass + (val ? '' : ' jp-empty');
+          cell.textContent = val || '—';
+          grid.appendChild(cell);
+        });
+        gridWrap.appendChild(grid);
+        container.appendChild(label);
+        container.appendChild(gridWrap);
+        label.querySelector('.jp-arrow').addEventListener('click', () => {
+          gridWrap.classList.toggle('open');
+          label.querySelector('.jp-arrow').classList.toggle('open');
+        });
+      }
+
+      function renderQuadrant() {
+        const svg = document.getElementById('jpQuadChart');
+        const W = 380, H = 300, padL = 42, padR = 16, padT = 14, padB = 34;
+        const plotW = W - padL - padR, plotH = H - padT - padB;
+
+        const data = stages.filter(s => stepsMap[s]).map(s => ({ stage: s, steps: stepsMap[s] || 1, pain: stageTotal(s) }));
+        const maxSteps = Math.max(...data.map(d => d.steps)) + 1;
+        const maxPain = Math.max(1, ...data.map(d => d.pain)) + 3;
+        const xScale = v => padL + (v / maxSteps) * plotW;
+        const yScale = v => padT + plotH - (v / maxPain) * plotH;
+        const midX = maxSteps / 2, midY = maxPain / 2;
+
+        let html = '';
+        html += '<rect x="' + xScale(midX) + '" y="' + padT + '" width="' + (xScale(maxSteps) - xScale(midX)) + '" height="' + (yScale(midY) - padT) + '" fill="rgba(255,107,107,0.10)"/>';
+        html += '<rect x="' + padL + '" y="' + padT + '" width="' + (xScale(midX) - padL) + '" height="' + (yScale(midY) - padT) + '" fill="rgba(255,255,255,0.03)"/>';
+        html += '<rect x="' + xScale(midX) + '" y="' + yScale(midY) + '" width="' + (xScale(maxSteps) - xScale(midX)) + '" height="' + (yScale(0) - yScale(midY)) + '" fill="rgba(255,255,255,0.03)"/>';
+        html += '<rect x="' + padL + '" y="' + yScale(midY) + '" width="' + (xScale(midX) - padL) + '" height="' + (yScale(0) - yScale(midY)) + '" fill="rgba(255,255,255,0.015)"/>';
+        html += '<line class="jp-quad-line" x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (H - padB) + '"/>';
+        html += '<line class="jp-quad-line" x1="' + padL + '" y1="' + (H - padB) + '" x2="' + (W - padR) + '" y2="' + (H - padB) + '"/>';
+        html += '<line class="jp-quad-grid" x1="' + xScale(midX) + '" y1="' + padT + '" x2="' + xScale(midX) + '" y2="' + (H - padB) + '"/>';
+        html += '<line class="jp-quad-grid" x1="' + padL + '" y1="' + yScale(midY) + '" x2="' + (W - padR) + '" y2="' + yScale(midY) + '"/>';
+        html += '<text class="jp-quad-axis" x="' + (W / 2) + '" y="' + (H - 8) + '" text-anchor="middle">流程步驟數 →</text>';
+        html += '<text class="jp-quad-axis" x="12" y="' + (H / 2) + '" text-anchor="middle" transform="rotate(-90 12 ' + (H / 2) + ')">負評則數 →</text>';
+        html += '<text class="jp-quad-label" x="' + (xScale(maxSteps) - 4) + '" y="' + (padT + 12) + '" text-anchor="end" fill="#ff6b6b">優先重新設計</text>';
+        html += '<text class="jp-quad-label" x="' + (padL + 4) + '" y="' + (H - padB - 6) + '" text-anchor="start" fill="#7ee27e">相對健康</text>';
+
+        data.forEach(d => {
+          const cx = xScale(d.steps), cy = yScale(d.pain);
+          const r = 4 + Math.sqrt(d.pain) * 1.1;
+          const isPriority = d.steps >= midX && d.pain >= midY;
+          const color = isPriority ? '#ff6b6b' : (d.pain === 0 ? '#4a4a4e' : '#e8621f');
+          html += '<g class="jp-quad-point" data-stage="' + d.stage + '"><circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + color + '" fill-opacity="0.75" stroke="' + color + '"/><text x="' + cx + '" y="' + (cy - r - 4) + '" text-anchor="middle">' + d.stage + '</text></g>';
+        });
+
+        svg.innerHTML = html;
+        svg.querySelectorAll('.jp-quad-point').forEach(el => {
+          el.addEventListener('click', () => highlightStage(el.dataset.stage));
+        });
+
+        const priority = data.filter(d => d.steps >= midX && d.pain >= midY).sort((a, b) => b.pain - a.pain);
+        const list = document.getElementById('jpPriorityList');
+        list.innerHTML = priority.map((d, i) =>
+          '<div class="jp-priority-item" data-stage="' + d.stage + '">' +
+          '<div class="jp-priority-rank">' + (i + 1) + '</div>' +
+          '<div class="jp-priority-name">' + d.stage + '</div>' +
+          '<div class="jp-priority-meta">' + d.steps + '步驟／' + d.pain + '則</div></div>'
+        ).join('') || '<div class="jp-priority-meta">目前篩選下右上象限無資料</div>';
+        list.querySelectorAll('.jp-priority-item').forEach(el => {
+          el.addEventListener('click', () => highlightStage(el.dataset.stage));
+        });
+      }
+
+      function renderPareto() {
+        const list = document.getElementById('jpParetoList');
+        const visible = visiblePoints().map(p => Object.assign({}, p, { vc: pointVisibleCount(p) })).sort((a, b) => b.vc - a.vc);
+        const totalAll = visible.reduce((s, p) => s + p.vc, 0) || 1;
+        const top = visible.slice(0, 10);
+        const maxVc = Math.max(1, ...top.map(p => p.vc));
+
+        list.innerHTML = top.map((p, i) =>
+          '<div class="jp-pareto-row" data-code="' + p.code + '">' +
+          '<div class="jp-pareto-top"><span><span class="jp-pareto-rank">#' + (i + 1) + '</span>' +
+          '<span class="jp-pareto-code" style="color:' + typeColor[p.type] + '">' + p.code + '</span></span>' +
+          '<span class="jp-pareto-count">' + p.vc + ' 則</span></div>' +
+          '<div class="jp-pareto-label">' + p.label + '（' + p.stage + '）</div>' +
+          '<div class="jp-pareto-track"><div class="jp-pareto-fill" style="width:' + (p.vc / maxVc * 100) + '%; background:' + typeColor[p.type] + '"></div></div>' +
+          '<div class="jp-pareto-pct">佔篩選後總負評 ' + Math.round(p.vc / totalAll * 100) + '%</div></div>'
+        ).join('') || '<div class="jp-priority-meta">目前篩選條件下無資料</div>';
+
+        list.querySelectorAll('.jp-pareto-row').forEach(el => {
+          el.addEventListener('click', () => {
+            const p = points.find(pt => pt.code === el.dataset.code);
+            if (p) openJourneyDrawer(p);
+          });
+        });
+      }
+
+      function renderAll() {
+        renderBoard();
+        renderQuadrant();
+        renderPareto();
+      }
+
+      document.querySelectorAll('#jpTypeFilters .jp-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          const t = chip.dataset.type;
+          chip.classList.toggle('active');
+          if (activeTypes.has(t)) activeTypes.delete(t); else activeTypes.add(t);
+          renderAll();
+        });
+      });
+      document.querySelectorAll('#jpPlatformFilters .jp-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          const t = chip.dataset.platform;
+          chip.classList.toggle('active');
+          if (activePlatforms.has(t)) activePlatforms.delete(t); else activePlatforms.add(t);
+          renderAll();
+        });
+      });
+
+      document.getElementById('jpInfoToggle').addEventListener('click', function () {
+        document.getElementById('jpInfoBox').classList.toggle('open');
+        this.classList.toggle('open');
+      });
+
+      renderAll();
+      buildIndependentRow(document.getElementById('jpFrontRowWrap'), '前台互動', JOURNEY_FRONT_LABELS_CLIENT, 'jp-front-cell');
+      buildIndependentRow(document.getElementById('jpBackRowWrap'), '後台/系統', JOURNEY_BACK_LABELS_CLIENT, 'jp-back-cell');
+
+      window.jpRedrawDividers = function () {
+        const board = document.getElementById('jpBoard');
+        const stageRow = board.children[1];
+        if (stageRow) drawDividers(board, stageRow);
+      };
+      window.addEventListener('resize', () => { if (window.jpRedrawDividers) window.jpRedrawDividers(); });
+    })();
+    } catch (jpErr) {
+      console.error('整合式旅程痛點 tab 初始化失敗：', jpErr);
     }
 
     // ===== Tab 切換 =====
