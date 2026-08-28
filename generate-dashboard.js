@@ -690,6 +690,7 @@ function buildDataset(dailyRuns, fullHistory, manualReviews) {
     iosTotal: allIos.length,
     actualAndroidTotal: allReviewsFlatWithManual.filter((r) => r.platform === 'android').length, // 含手動補充資料的真實總數
     actualIosTotal: allReviewsFlatWithManual.filter((r) => r.platform === 'ios').length, // 含手動補充資料的真實總數
+    thisYearTotal: reviewsByRange.year.length, // 今年新增評論數（不分平台）
     androidAvgOverall: allAndroid.filter((r) => r.score !== null).length
       ? allAndroid.reduce((a, b) => a + (b.score || 0), 0) / allAndroid.filter((r) => r.score !== null).length
       : null,
@@ -794,19 +795,40 @@ function renderHtml(dataset) {
     padding: 10px 12px;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
+    position: relative;
+  }
+  .card.card-square .label-wrap {
+    position: relative;
+    height: 2.4em; /* 固定保留 2 行的高度，不管文字實際幾行，數字位置都會對齊 */
+    margin-bottom: 3px;
   }
   .card.card-square .label {
     font-size: 14px;
-    margin-bottom: 3px;
     line-height: 1.2;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    margin: 0;
   }
   .card.card-square .value {
     font-size: 34px;
     line-height: 1.1;
   }
+  .card-badge-note {
+    position: absolute;
+    bottom: 8px;
+    right: 10px;
+    font-size: 9px;
+    color: #1a1a1a;
+    opacity: 0.55;
+  }
   .card-sub {
-    margin-top: 6px;
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 8px;
     line-height: 1.3;
   }
   .card-sub-label {
@@ -820,7 +842,21 @@ function renderHtml(dataset) {
     color: #1a1a1a;
     opacity: 0.85;
   }
-  .card .label { color: #1a1a1a; font-size: 12px; margin-bottom: 6px; opacity: 0.7; }
+  .card .label-wrap {
+    position: relative;
+    height: 2.4em; /* 固定保留 2 行的高度，不管文字實際幾行，數字位置都會對齊 */
+    margin-bottom: 6px;
+  }
+  .card .label {
+    color: #1a1a1a;
+    font-size: 12px;
+    opacity: 0.7;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    margin: 0;
+  }
   .card .value { font-size: 26px; font-weight: 600; color: #1a1a1a; }
   .card .value.android { color: #1a1a1a; }
   .card .value.ios { color: var(--ios); }
@@ -907,6 +943,19 @@ function renderHtml(dataset) {
     font-size: 11px;
     margin-top: -12px;
     margin-bottom: 16px;
+  }
+  .insight-headline-stat {
+    font-size: 15px;
+    font-weight: 700;
+    color: #C6F24E;
+    margin-bottom: 12px;
+    line-height: 1.4;
+  }
+  .insight-headline-stat .headline-sub {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--muted);
+    margin-left: 6px;
   }
   .three-col {
     display: grid;
@@ -1320,12 +1369,27 @@ function renderHtml(dataset) {
   .jp-dot{ width:9px; height:9px; border-radius:50%; }
 
   .jp-board-section{ width:100%; }
-  .jp-charts-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:20px; margin-top:20px; }
+  /* 流程複雜度×痛點密集度 / 痛點排行榜：維持原本一行四欄的寬度不變，
+     點擊任一區塊時該卡片自己向下展開顯示更多內容，寬度跟另一個區塊都不受影響。 */
+  .jp-charts-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:20px; margin-top:20px; align-items:start; }
   @media (max-width:1180px){
     .jp-charts-grid{ grid-template-columns:repeat(2, 1fr); }
   }
   @media (max-width:720px){
     .jp-charts-grid{ grid-template-columns:1fr; }
+  }
+  .jp-expandable-card {
+    cursor: pointer;
+    user-select: none;
+    overflow: hidden;
+    transition: max-height 0.35s ease;
+  }
+  @media (hover: hover) {
+    .jp-expandable-card:hover {
+      border-color: #454b58;
+      box-shadow: 0 0 24px rgba(198, 242, 78, 0.15);
+    }
+    .jp-expandable-card:hover h2 { color: #C6F24E; transition: color 0.2s ease; }
   }
 
   .jp-board-wrap{ overflow-x:auto; padding-bottom:14px; }
@@ -1386,16 +1450,16 @@ function renderHtml(dataset) {
   .jp-priority-name{ font-size:11.5px; font-weight:600; flex:1; }
   .jp-priority-meta{ font-size:10px; color:var(--muted); }
 
-  .jp-pareto-row{ cursor:pointer; margin-bottom:10px; }
+  .jp-pareto-row{ cursor:pointer; margin-bottom:14px; }
   .jp-pareto-row:last-child{ margin-bottom:0; }
   .jp-pareto-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
   .jp-pareto-rank{ font-size:10px; color:var(--muted); margin-right:6px; }
   .jp-pareto-code{ font-size:11px; font-weight:700; }
-  .jp-pareto-label{ font-size:10.5px; color:var(--muted); }
+  .jp-pareto-label{ font-size:10.5px; color:var(--muted); margin-bottom:6px; }
   .jp-pareto-count{ font-size:11px; font-weight:700; color:var(--text); }
   .jp-pareto-track{ width:100%; height:8px; background:var(--bg); border-radius:3px; overflow:hidden; }
   .jp-pareto-fill{ height:100%; border-radius:3px; }
-  .jp-pareto-pct{ font-size:9.5px; color:var(--muted); margin-top:2px; }
+  .jp-pareto-pct{ font-size:9.5px; color:var(--muted); margin-top:6px; }
 </style>
 </head>
 <body>
@@ -1420,10 +1484,9 @@ function renderHtml(dataset) {
     <button class="tab-btn active" data-tab="comments">評論</button>
     <button class="tab-btn" data-tab="autosummary">自動摘要</button>
     <button class="tab-btn" data-tab="sentiment">回饋洞察</button>
-    <button class="tab-btn" data-tab="version">版本</button>
-    <button class="tab-btn" data-tab="ratings">評分</button>
-    <button class="tab-btn" data-tab="favorites">收藏</button>
     <button class="tab-btn" data-tab="journeypain">整合式旅程痛點</button>
+    <button class="tab-btn" data-tab="versionratings">版本/評分</button>
+    <button class="tab-btn" data-tab="favorites">收藏</button>
   </div>
 
   <div class="tab-panel active" id="tab-comments">
@@ -1565,7 +1628,7 @@ function renderHtml(dataset) {
     </div>
   </div>
 
-  <div class="tab-panel" id="tab-ratings">
+  <div class="tab-panel" id="tab-versionratings">
     <div class="grid grid-2col" id="ratingsSummaryCards" style="margin-bottom: 20px;"></div>
 
     <div class="chart-card">
@@ -1590,6 +1653,15 @@ function renderHtml(dataset) {
       </div>
       </div>
     </div>
+
+    <div class="chart-card">
+      <h2>各版本平均評分與評論數</h2>
+      <div class="h2-note">僅 Google Play，App Store 抓取流程目前未取得版本號</div>
+      <div class="chart-container">
+        <canvas id="versionChart" height="100"></canvas>
+      </div>
+      <div class="note">若某個版本後評分明顯下滑，通常代表該次改版造成體驗劣化，可以回頭比對該版本的更新內容。滑鼠移到長條上可看該版本的則數與平均星等。</div>
+    </div>
   </div>
 
   <div class="tab-panel" id="tab-sentiment">
@@ -1601,10 +1673,10 @@ function renderHtml(dataset) {
           <button class="toggle-btn active" data-time-range="all">全部</button>
           <button class="toggle-btn" data-time-range="year">今年</button>
           <button class="toggle-btn" data-time-range="month">本月</button>
-          <button class="toggle-btn" data-time-range="week">本週</button>
         </div>
       </div>
       <div class="h2-note">依關鍵字比對，可能一則評論同時符合多個類別；點擊此區塊可展開查看更多內容</div>
+      <div class="insight-headline-stat" id="categoryHeadlineStat"></div>
       <div class="chart-container">
         <canvas id="categoryChart" height="100"></canvas>
       </div>
@@ -1623,10 +1695,10 @@ function renderHtml(dataset) {
           <button class="toggle-btn active" data-time-range="all">全部</button>
           <button class="toggle-btn" data-time-range="year">今年</button>
           <button class="toggle-btn" data-time-range="month">本月</button>
-          <button class="toggle-btn" data-time-range="week">本週</button>
         </div>
       </div>
       <div class="h2-note">點擊此區塊可展開查看更多內容</div>
+      <div class="insight-headline-stat" id="stageHeadlineStat"></div>
       <div class="chart-container">
         <canvas id="stageChart" height="100"></canvas>
       </div>
@@ -1648,10 +1720,10 @@ function renderHtml(dataset) {
           <button class="toggle-btn active" data-time-range="all">全部</button>
           <button class="toggle-btn" data-time-range="year">今年</button>
           <button class="toggle-btn" data-time-range="month">本月</button>
-          <button class="toggle-btn" data-time-range="week">本週</button>
         </div>
       </div>
       <div class="h2-note">每個點是一個分類；越靠右代表提到次數越多，越靠下代表平均星等越低；點擊此區塊可展開查看更多內容</div>
+      <div class="insight-headline-stat" id="matrixHeadlineStat"></div>
       <div class="chart-container">
         <canvas id="matrixChart" height="110"></canvas>
       </div>
@@ -1665,10 +1737,10 @@ function renderHtml(dataset) {
           <button class="toggle-btn active" data-time-range="all">全部</button>
           <button class="toggle-btn" data-time-range="year">今年</button>
           <button class="toggle-btn" data-time-range="month">本月</button>
-          <button class="toggle-btn" data-time-range="week">本週</button>
         </div>
       </div>
       <div class="h2-note">抱怨/bug、功能請求、純稱讚、一般，依關鍵字粗略判斷；點擊此區塊可展開查看更多內容</div>
+      <div class="insight-headline-stat" id="intentHeadlineStat"></div>
       <div class="chart-container">
         <canvas id="intentChart" height="90"></canvas>
       </div>
@@ -1699,17 +1771,6 @@ function renderHtml(dataset) {
       </table>
       </div>
       <div class="note" id="categoryDetailNote"></div>
-    </div>
-  </div>
-
-  <div class="tab-panel" id="tab-version">
-    <div class="chart-card">
-      <h2>各版本平均評分與評論數</h2>
-      <div class="h2-note">僅 Google Play，App Store 抓取流程目前未取得版本號</div>
-      <div class="chart-container">
-        <canvas id="versionChart" height="100"></canvas>
-      </div>
-      <div class="note">若某個版本後評分明顯下滑，通常代表該次改版造成體驗劣化，可以回頭比對該版本的更新內容。滑鼠移到長條上可看該版本的則數與平均星等。</div>
     </div>
   </div>
 
@@ -1787,7 +1848,7 @@ function renderHtml(dataset) {
           </div>
           <div class="jp-info-section">
             <h4>③ 怎麼互動</h4>
-            <p>用右上角的篩選器（F/D/W顯示開關、Android/iOS）縮小範圍，會同步套用到藍圖、象限圖、排行榜三個區塊。點擊藍圖裡的圓點、排行榜項目，都會打開評論詳情抽屜；點擊象限圖的點或優先清單，會讓藍圖對應的階段亮起提示。</p>
+            <p>用右上角的篩選器（F/D/W顯示開關、Android/iOS）縮小範圍，會同步套用到藍圖、象限圖、排行榜三個區塊。點擊藍圖裡的圓點、排行榜項目、象限圖的點、優先清單，都會打開評論詳情抽屜；象限圖跟優先清單額外會讓藍圖對應的階段亮起提示，方便對照上下文。</p>
             <p style="margin-top:8px; opacity:0.75;">⚠️ 目前F/D/W與階段的對應，是依現有評論分類做的第一版判斷，準確度以此為前提，建議實際檢視評論後調整 <code>JOURNEY_CATEGORY_MAP</code>（在 generate-dashboard.js 裡）。</p>
           </div>
         </div>
@@ -1800,16 +1861,16 @@ function renderHtml(dataset) {
       </div>
     </div>
 
-    <div class="jp-charts-grid">
-      <div class="chart-card">
+    <div class="jp-charts-grid" id="jpChartsGrid">
+      <div class="chart-card jp-expandable-card" id="jpQuadInsightCard" data-jp-key="jpquad">
         <h2 style="margin:0 0 2px; font-size:13px;">流程複雜度 × 痛點密集度</h2>
-        <div class="note" style="margin:2px 0 8px;">X軸＝行為流程子步驟數，Y軸＝負評總則數。右上角＝優先重新設計候選</div>
+        <div class="note" style="margin:2px 0 8px;">X軸＝行為流程子步驟數，Y軸＝負評總則數。右上角＝優先重新設計候選；點擊資料點/下方清單可查看該階段實際負評；點擊卡片其他地方可展開放大圖表</div>
         <svg id="jpQuadChart" viewBox="0 0 380 300" width="100%"></svg>
         <div class="jp-priority-list" id="jpPriorityList"></div>
       </div>
-      <div class="chart-card">
+      <div class="chart-card jp-expandable-card" id="jpParetoInsightCard" data-jp-key="jppareto">
         <h2 style="margin:0 0 2px; font-size:13px;">痛點排行榜</h2>
-        <div class="note" style="margin:2px 0 8px;">依篩選後負評則數排序，點擊可查看實際評論</div>
+        <div class="note" style="margin:2px 0 8px;">依篩選後負評則數排序，點擊可查看實際評論；點擊此區塊可展開查看更多內容</div>
         <div class="jp-pareto-list" id="jpParetoList"></div>
       </div>
     </div>
@@ -2014,19 +2075,22 @@ function renderHtml(dataset) {
         const subHtml = (c.subLabel !== undefined && c.subValue !== undefined)
           ? '<div class="card-sub"><div class="card-sub-label">' + c.subLabel + '</div><div class="card-sub-value">' + c.subValue + '</div></div>'
           : '';
+        const badgeHtml = c.badgeNote ? '<div class="card-badge-note">' + c.badgeNote + '</div>' : '';
+        const labelHtml = '<div class="label-wrap"><div class="label">' + c.label + '</div></div>';
         // 沒有有效數值時（例如尚無評分資料），直接顯示 "-"，不套用計數動畫
         if (c.value === null || c.value === undefined || isNaN(c.value)) {
-          return '<div class="' + cardClass + '"' + clickAttr + '><div class="label">' + c.label + '</div><div class="' + valueClass + '"' + style + '>-</div>' + subHtml + '</div>';
+          return '<div class="' + cardClass + '"' + clickAttr + '>' + labelHtml + '<div class="' + valueClass + '"' + style + '>-</div>' + subHtml + badgeHtml + '</div>';
         }
         const initialText = c.decimals > 0 ? (0).toFixed(c.decimals) : '0';
-        return '<div class="' + cardClass + '"' + clickAttr + '><div class="label">' + c.label + '</div>' +
-          '<div class="' + valueClass + '"' + style + ' data-count-target="' + c.value + '" data-count-decimals="' + c.decimals + '">' + initialText + '</div>' + subHtml + '</div>';
+        return '<div class="' + cardClass + '"' + clickAttr + '>' + labelHtml +
+          '<div class="' + valueClass + '"' + style + ' data-count-target="' + c.value + '" data-count-decimals="' + c.decimals + '">' + initialText + '</div>' + subHtml + badgeHtml + '</div>';
       }).join('');
     }
 
     renderCardGroup(summaryEl, [
       { label: 'Google Play<br>累積評論數', value: dataset.androidTotal, cls: 'android', decimals: 0, clickKey: 'android-total', subLabel: '實際總數(含手動補充)', subValue: dataset.actualAndroidTotal },
       { label: 'App Store<br>累積評論數', value: dataset.iosTotal, cls: 'ios-lime', decimals: 0, clickKey: 'ios-total', subLabel: '實際總數(含手動補充)', subValue: dataset.actualIosTotal },
+      { label: '今年新增<br>評論數', value: dataset.thisYearTotal, cls: 'android', decimals: 0, clickKey: 'this-year-total', badgeNote: '不分平台' },
       { label: 'Google Play<br>新評論數', value: dataset.newReviewsCount.android, cls: 'new-count', decimals: 0, clickKey: 'android-new' },
       { label: 'App Store<br>新評論數', value: dataset.newReviewsCount.ios, cls: 'new-count', decimals: 0, clickKey: 'ios-new' },
     ], { square: true, clickable: true });
@@ -2040,6 +2104,10 @@ function renderHtml(dataset) {
       'ios-total': {
         title: 'App Store 全部評論',
         getReviews: () => dataset.allReviewsFlat.filter(r => r.platform === 'ios'),
+      },
+      'this-year-total': {
+        title: '今年新增評論（不分平台）',
+        getReviews: () => dataset.reviewsByRange.year,
       },
       'android-new': {
         title: 'Google Play 新增評論',
@@ -2120,8 +2188,7 @@ function renderHtml(dataset) {
       comments: ['commentScatterChart', 'wordFrequencyChart'],
       autosummary: ['versionTrendChart', 'painPointsChart', 'trendChangeChart'],
       sentiment: ['categoryChart', 'stageChart', 'matrixChart', 'intentChart'],
-      version: ['versionChart'],
-      ratings: ['trendChart', 'androidDistChart', 'iosDistChart'],
+      versionratings: ['versionChart', 'trendChart', 'androidDistChart', 'iosDistChart'],
     };
     function replayTabAnimations(tabKey) {
       if (window.Chart && Chart.instances) {
@@ -2216,11 +2283,25 @@ function renderHtml(dataset) {
         openReviewDrawer(p.code + ' · ' + p.label, '階段：' + p.stage + '／' + typeName[p.type] + '　共 ' + matched.length + ' 則', matched);
       }
 
+      // 「流程複雜度×痛點密集度」象限圖／優先清單點擊用：一個階段底下可能對應多個痛點分類，
+      // 把該階段涵蓋到的所有分類彙整起來，一起找出對應的實際負評內容。
+      function openStageDrawer(stage) {
+        const categories = [...new Set(pointsFor(stage).map(p => p.category))];
+        const matched = dataset.allReviewsFlat.filter(r =>
+          categories.some(c => r.categories.includes(c)) &&
+          r.sentiment === 'negative' &&
+          activePlatforms.has(r.platform)
+        );
+        openReviewDrawer('階段：' + stage, '共 ' + matched.length + ' 則負評', matched);
+      }
+
       function highlightStage(stage) {
         document.querySelectorAll('.jp-stage-cell').forEach(el => {
           if (el.dataset.stage === stage) {
             el.classList.add('flash');
-            el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+            if (typeof el.scrollIntoView === 'function') {
+              try { el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }); } catch (e) {}
+            }
             setTimeout(() => el.classList.remove('flash'), 1200);
           }
         });
@@ -2392,9 +2473,12 @@ function renderHtml(dataset) {
         });
       }
 
+      let jpQuadExpanded = false;
+      let jpParetoExpanded = false;
+
       function renderQuadrant() {
         const svg = document.getElementById('jpQuadChart');
-        const W = 380, H = 300, padL = 42, padR = 16, padT = 14, padB = 34;
+        const W = 380, H = jpQuadExpanded ? 480 : 300, padL = 42, padR = 16, padT = 26, padB = 34;
         const plotW = W - padL - padR, plotH = H - padT - padB;
 
         const data = stages.filter(s => stepsMap[s]).map(s => ({ stage: s, steps: stepsMap[s] || 1, pain: stageTotal(s) }));
@@ -2418,20 +2502,51 @@ function renderHtml(dataset) {
         html += '<text class="jp-quad-label" x="' + (xScale(maxSteps) - 4) + '" y="' + (padT + 12) + '" text-anchor="end" fill="#ff6b6b">優先重新設計</text>';
         html += '<text class="jp-quad-label" x="' + (padL + 4) + '" y="' + (H - padB - 6) + '" text-anchor="start" fill="#7ee27e">相對健康</text>';
 
-        data.forEach(d => {
+        // ===== 標籤防重疊：座標相近的點，標籤很容易疊在一起，這裡做簡單的碰撞偵測，
+        //      重疊時就把後面的標籤往下移一點，直到不再跟前面已放置的標籤重疊為止；
+        //      同時把「優先重新設計」「相對健康」這兩個角落文字也算進碰撞範圍，
+        //      並限制標籤最少要離頂端 12px，避免超出可視範圍被裁切。 =====
+        const placedLabels = [
+          { x1: xScale(maxSteps) - 4 - 70, x2: xScale(maxSteps) - 4, y: padT + 12 },
+          { x1: padL + 4, x2: padL + 4 + 40, y: H - padB - 6 },
+        ];
+        const MIN_LABEL_Y = 12;
+        function findNonOverlappingY(cx, baseY, textWidth) {
+          let y = Math.max(baseY, MIN_LABEL_Y);
+          const x1 = cx - textWidth / 2, x2 = cx + textWidth / 2;
+          const LINE_STEP = 11;
+          let attempt = 0;
+          while (attempt < 8) {
+            const collide = placedLabels.some((p) => x1 < p.x2 && x2 > p.x1 && Math.abs(y - p.y) < LINE_STEP);
+            if (!collide) break;
+            y += LINE_STEP; // 往下疊放，而不是互相蓋住
+            attempt++;
+          }
+          placedLabels.push({ x1, x2, y });
+          return y;
+        }
+
+        const pointsHtml = data.map((d) => {
           const cx = xScale(d.steps), cy = yScale(d.pain);
           const r = 4 + Math.sqrt(d.pain) * 1.1;
           const isPriority = d.steps >= midX && d.pain >= midY;
           const color = isPriority ? '#ff6b6b' : (d.pain === 0 ? '#4a4a4e' : '#e8621f');
-          html += '<g class="jp-quad-point" data-stage="' + d.stage + '"><circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + color + '" fill-opacity="0.75" stroke="' + color + '"/><text x="' + cx + '" y="' + (cy - r - 4) + '" text-anchor="middle">' + d.stage + '</text></g>';
-        });
+          const estWidth = d.stage.length * 12; // 粗略估計文字寬度（中文字約 12px/字），用於碰撞偵測
+          const labelY = findNonOverlappingY(cx, cy - r - 4, estWidth);
+          return '<g class="jp-quad-point" data-stage="' + d.stage + '"><circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + color + '" fill-opacity="0.75" stroke="' + color + '"/><text x="' + cx + '" y="' + labelY + '" text-anchor="middle">' + d.stage + '</text></g>';
+        }).join('');
+        html += pointsHtml;
 
+        svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); // 展開時 H 會變大，viewBox 也要跟著更新，不然畫面會被裁切
         svg.innerHTML = html;
         svg.querySelectorAll('.jp-quad-point').forEach(el => {
-          el.addEventListener('click', () => highlightStage(el.dataset.stage));
+          el.addEventListener('click', () => {
+            openStageDrawer(el.dataset.stage);
+            highlightStage(el.dataset.stage);
+          });
         });
 
-        const priority = data.filter(d => d.steps >= midX && d.pain >= midY).sort((a, b) => b.pain - a.pain);
+        const priority = data.filter(d => d.steps >= midX && d.pain >= midY).sort((a, b) => b.pain - a.pain).slice(0, 5); // 只列前 5 名
         const list = document.getElementById('jpPriorityList');
         list.innerHTML = priority.map((d, i) =>
           '<div class="jp-priority-item" data-stage="' + d.stage + '">' +
@@ -2440,7 +2555,10 @@ function renderHtml(dataset) {
           '<div class="jp-priority-meta">' + d.steps + '步驟／' + d.pain + '則</div></div>'
         ).join('') || '<div class="jp-priority-meta">目前篩選下右上象限無資料</div>';
         list.querySelectorAll('.jp-priority-item').forEach(el => {
-          el.addEventListener('click', () => highlightStage(el.dataset.stage));
+          el.addEventListener('click', () => {
+            openStageDrawer(el.dataset.stage);
+            highlightStage(el.dataset.stage);
+          });
         });
       }
 
@@ -2448,7 +2566,7 @@ function renderHtml(dataset) {
         const list = document.getElementById('jpParetoList');
         const visible = visiblePoints().map(p => Object.assign({}, p, { vc: pointVisibleCount(p) })).sort((a, b) => b.vc - a.vc);
         const totalAll = visible.reduce((s, p) => s + p.vc, 0) || 1;
-        const top = visible.slice(0, 10);
+        const top = visible.slice(0, jpParetoExpanded ? 20 : 6); // 收合時列前 6 名，展開時列前 20 名
         const maxVc = Math.max(1, ...top.map(p => p.vc));
 
         list.innerHTML = top.map((p, i) =>
@@ -2473,6 +2591,16 @@ function renderHtml(dataset) {
         renderBoard();
         renderQuadrant();
         renderPareto();
+        // 篩選條件改變時，已展開卡片的內容量可能跟著變，順便重新校正高度，避免內容被裁切或留白過多
+        [
+          { card: document.getElementById('jpQuadInsightCard'), expanded: jpQuadExpanded },
+          { card: document.getElementById('jpParetoInsightCard'), expanded: jpParetoExpanded },
+        ].forEach(({ card, expanded }) => {
+          if (card && expanded) {
+            card.style.maxHeight = 'none';
+            requestAnimationFrame(() => { card.style.maxHeight = card.scrollHeight + 'px'; });
+          }
+        });
       }
 
       document.querySelectorAll('#jpTypeFilters .jp-chip').forEach(chip => {
@@ -2498,6 +2626,54 @@ function renderHtml(dataset) {
       });
 
       renderAll();
+
+      // ===== 「流程複雜度×痛點密集度」「痛點排行榜」：點擊該卡片自己向下展開顯示更多內容，
+      //      寬度維持原本一行四欄不變，也不會影響另一張卡片的大小/位置。 =====
+      (function setupJpChartsExpand() {
+        const jpQuadCard = document.getElementById('jpQuadInsightCard');
+        const jpParetoCard = document.getElementById('jpParetoInsightCard');
+
+        // 收合狀態的高度改成「實際量測」，不用猜固定數字——說明文字之後如果變長、
+        // 或圖表內容變多，這裡都會自動量出正確高度，不會把底部內容裁掉。
+        function measureAndLockCollapsed(card) {
+          if (!card) return 0;
+          card.style.maxHeight = 'none';
+          const h = card.scrollHeight;
+          card.style.maxHeight = h + 'px';
+          return h;
+        }
+        const collapsedHeights = {
+          quad: measureAndLockCollapsed(jpQuadCard),
+          pareto: measureAndLockCollapsed(jpParetoCard),
+        };
+
+        if (jpQuadCard) {
+          jpQuadCard.addEventListener('click', (e) => {
+            if (e.target.closest('.jp-quad-point, .jp-priority-item')) return;
+            jpQuadExpanded = !jpQuadExpanded;
+            jpQuadCard.style.maxHeight = 'none'; // 先解除限制，讓內容重新渲染成完整高度
+            renderQuadrant();
+            requestAnimationFrame(() => {
+              const targetHeight = jpQuadExpanded ? jpQuadCard.scrollHeight : collapsedHeights.quad;
+              jpQuadCard.style.maxHeight = targetHeight + 'px';
+            });
+          });
+        }
+
+        if (jpParetoCard) {
+          jpParetoCard.addEventListener('click', (e) => {
+            if (e.target.closest('.jp-pareto-row')) return;
+            jpParetoExpanded = !jpParetoExpanded;
+            jpParetoCard.style.maxHeight = 'none';
+            renderPareto();
+            requestAnimationFrame(() => {
+              const targetHeight = jpParetoExpanded ? jpParetoCard.scrollHeight : collapsedHeights.pareto;
+              jpParetoCard.style.maxHeight = targetHeight + 'px';
+            });
+          });
+        }
+      })();
+
       buildIndependentRow(document.getElementById('jpFrontRowWrap'), '前台互動', JOURNEY_FRONT_LABELS_CLIENT, 'jp-front-cell');
       buildIndependentRow(document.getElementById('jpBackRowWrap'), '後台/系統', JOURNEY_BACK_LABELS_CLIENT, 'jp-back-cell');
 
@@ -2542,6 +2718,69 @@ function renderHtml(dataset) {
     // ===== 情緒分析 tab：情緒 × 類別 統計圖 =====
     const sentimentLabelMap = { positive: '正面', neutral: '中性', negative: '負面' };
     const sentimentOrder = ['positive', 'neutral', 'negative'];
+
+    // ===== 回饋洞察四張卡片：各自的「今年」重點統計（固定看今年，跟卡片本身的全部/今年/本月/本週篩選器分開） =====
+    (function renderInsightHeadlineStats() {
+      const yearCategoryStats = dataset.categoryStatsByRange.year;
+      const yearStageStats = dataset.stageStatsByRange.year;
+      const yearMatrix = dataset.categoryMatrixByRange.year;
+      const yearIntentStats = dataset.intentStatsByRange.year;
+
+      // 1) 情緒與類別分析：今年負評最多的分類
+      const categoryEl = document.getElementById('categoryHeadlineStat');
+      if (categoryEl) {
+        let best = null;
+        dataset.categoryOrder.forEach((cat) => {
+          if (cat === '其他') return;
+          const neg = (yearCategoryStats[cat] && yearCategoryStats[cat].negative) || 0;
+          if (neg > 0 && (!best || neg > best.neg)) best = { cat, neg };
+        });
+        categoryEl.innerHTML = best
+          ? '今年負評最多分類：' + best.cat + '<span class="headline-sub">（' + best.neg + ' 則）</span>'
+          : '今年尚無足夠資料統計。';
+      }
+
+      // 2) 用戶旅程階段檢視：今年負評最多的階段
+      const stageEl = document.getElementById('stageHeadlineStat');
+      if (stageEl) {
+        let best = null;
+        dataset.stageOrder.forEach((stage) => {
+          const neg = (yearStageStats[stage] && yearStageStats[stage].negative) || 0;
+          if (neg > 0 && (!best || neg > best.neg)) best = { stage, neg };
+        });
+        stageEl.innerHTML = best
+          ? '今年負評最多階段：' + best.stage + '<span class="headline-sub">（' + best.neg + ' 則）</span>'
+          : '今年尚無足夠資料統計。';
+      }
+
+      // 3) 頻率 × 嚴重度矩陣：今年最需優先處理的分類（提及次數 × 嚴重程度的綜合排序）
+      const matrixEl = document.getElementById('matrixHeadlineStat');
+      if (matrixEl) {
+        let best = null;
+        (yearMatrix || []).forEach((m) => {
+          if (m.category === '其他' || !m.count) return;
+          const severityScore = m.count * (5 - m.avgScore); // 次數越多、平均星等越低，分數越高
+          if (!best || severityScore > best.severityScore) best = { ...m, severityScore };
+        });
+        matrixEl.innerHTML = best
+          ? '今年最需優先處理：' + best.category + '<span class="headline-sub">（提及 ' + best.count + ' 次、平均 ' + best.avgScore.toFixed(2) + ' ★）</span>'
+          : '今年尚無足夠資料統計。';
+      }
+
+      // 4) 意圖分佈：今年最主要的意圖類型與佔比
+      const intentEl = document.getElementById('intentHeadlineStat');
+      if (intentEl) {
+        const total = dataset.intentOrder.reduce((sum, key) => sum + (yearIntentStats[key] || 0), 0);
+        let best = null;
+        dataset.intentOrder.forEach((key) => {
+          const count = yearIntentStats[key] || 0;
+          if (!best || count > best.count) best = { key, count };
+        });
+        intentEl.innerHTML = best && total > 0
+          ? '今年最主要意圖：' + best.key + '<span class="headline-sub">（佔比 ' + Math.round((best.count / total) * 100) + '%）</span>'
+          : '今年尚無足夠資料統計。';
+      }
+    })();
 
     document.getElementById('otherCategoryNote').textContent =
       '目前有 ' + dataset.otherCount + ' 則評論未命中任何關鍵字、歸類為「其他」，建議定期檢視這個分類，找出尚未涵蓋的新興問題。';
