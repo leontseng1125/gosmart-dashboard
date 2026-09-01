@@ -734,6 +734,9 @@ function renderHtml(dataset) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>阿葛格 評論追蹤 Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
@@ -745,8 +748,47 @@ function renderHtml(dataset) {
     --text: #e8e9ed;
     --muted: #9aa0ac;
     --android: #c6f24e;
-    --ios: #FF9500;
+    --ios: #00DDCD;
     --neg: #ff6b6b;
+  }
+  :root {
+    --hud-glow: 198, 242, 78; /* 主色(lime)的RGB，供發光邊框/HUD文字使用；iOS專屬色維持獨立、不混用在這裡 */
+  }
+  .mono{
+    font-family: "JetBrains Mono", "Space Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .status-pill{
+    display:inline-flex; align-items:center; gap:5px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size:10.5px; font-weight:700; letter-spacing:0.03em;
+    padding:3px 9px; border-radius:20px; text-transform:uppercase;
+    border:1px solid currentColor;
+  }
+  .status-pill::before{ content:''; width:6px; height:6px; border-radius:50%; background:currentColor; flex-shrink:0; }
+  .status-pill.status-ok{ color:#00E676; background:rgba(0,230,118,0.08); }
+  .status-pill.status-warn{ color:#FFAA00; background:rgba(255,170,0,0.08); }
+  .status-pill.status-critical{ color:#FF3860; background:rgba(255,56,96,0.10); }
+  @keyframes pillPulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.55; } }
+  .status-pill.status-critical::before{ animation: pillPulse 1.3s ease-in-out infinite; }
+  .info-hint{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:15px; height:15px; border-radius:50%;
+    border:1px solid var(--muted); color:var(--muted);
+    font-size:10px; cursor:pointer; flex-shrink:0; position:relative;
+    font-family: -apple-system, "PingFang TC", sans-serif;
+  }
+  .info-hint:hover, .info-hint.open{ color:rgb(var(--hud-glow)); border-color:rgb(var(--hud-glow)); }
+  .info-hint-pop{
+    display:none; position:absolute; z-index:40; top:22px; left:50%; transform:translateX(-50%);
+    width:260px; background:#11151d; border:1px solid rgba(var(--hud-glow),0.35);
+    border-radius:8px; padding:10px 12px; font-size:11.5px; line-height:1.6; color:var(--muted);
+    font-weight:400; text-transform:none; letter-spacing:normal; cursor:default;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4), 0 0 12px rgba(var(--hud-glow),0.12);
+  }
+  .info-hint.open .info-hint-pop{ display:block; }
+  @media (hover:hover){
+    .info-hint:hover .info-hint-pop{ display:block; }
   }
   * { box-sizing: border-box; }
   html, body {
@@ -935,12 +977,68 @@ function renderHtml(dataset) {
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
 
+  .group-panel { display: none; }
+  .group-panel.active { display: block; }
+
+  .group-nav{
+    display:flex; gap:12px; margin-bottom:24px; flex-wrap:wrap;
+  }
+  .group-btn{
+    flex:1; min-width:220px; display:flex; align-items:center; gap:12px;
+    background: rgba(23, 26, 33, 0.82);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border:1px solid var(--border);
+    border-radius:10px; padding:14px 18px; cursor:pointer;
+    font-family: inherit; text-align:left; transition: border-color .15s, box-shadow .15s;
+  }
+  .group-btn:hover{ border-color: rgba(var(--hud-glow), 0.35); }
+  .group-btn.active{
+    border-color: rgb(var(--hud-glow));
+    box-shadow: 0 0 15px rgba(var(--hud-glow), 0.15);
+  }
+  .group-icon{ font-size:22px; line-height:1; flex-shrink:0; }
+  .group-text{ display:flex; flex-direction:column; gap:2px; }
+  .group-title{
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size:13px; font-weight:700; letter-spacing:0.04em; color: var(--muted);
+  }
+  .group-btn.active .group-title{ color: rgb(var(--hud-glow)); }
+  .group-subtitle{ font-size:12px; color: var(--muted); opacity:0.75; }
+
+  .anomaly-row{ display:flex; align-items:center; gap:9px; padding:8px 2px; border-bottom:1px solid var(--border); font-size:12px; cursor:pointer; }
+  .anomaly-row:last-child{ border-bottom:none; }
+  .anomaly-row:hover{ background: rgba(255,255,255,0.03); }
+  .anomaly-severity{ width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+  .anomaly-severity.critical{ background:#FF3860; box-shadow:0 0 6px rgba(255,56,96,0.8); }
+  .anomaly-severity.warn{ background:#FFAA00; }
+  .anomaly-tag-type{ font-size:9px; color:var(--muted); width:56px; flex-shrink:0; letter-spacing:0.03em; }
+  .anomaly-label{ flex:1; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .anomaly-count{ color:var(--muted); font-size:11px; flex-shrink:0; }
+
+  .live-grid{
+    display:grid;
+    grid-template-columns: 1fr 1.6fr 1fr;
+    gap:20px;
+    align-items:start;
+  }
+  @media (max-width:1100px){
+    .live-grid{ grid-template-columns: 1fr; }
+  }
+  .live-col-kpi{
+    display:grid; grid-template-columns: 1fr 1fr; gap:14px;
+  }
+  .live-col-kpi .card:nth-child(3){ grid-column: 1 / -1; }
+  .live-col-radar, .live-col-anomaly{ margin-bottom:0; }
+
   .chart-card {
-    background: var(--card);
-    border: 1px solid var(--border);
+    background: rgba(23, 26, 33, 0.82);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(var(--hud-glow), 0.18);
     border-radius: 12px;
     padding: 20px;
     margin-bottom: 24px;
+    box-shadow: 0 0 15px rgba(var(--hud-glow), 0.06);
   }
   .chart-card h2 { font-size: 14px; margin: 0 0 16px; color: var(--muted); font-weight: 500; }
   .h2-note {
@@ -1112,7 +1210,7 @@ function renderHtml(dataset) {
     font-weight: 600;
   }
   .badge.android { background: rgba(198,242,78,0.15); color: var(--android); }
-  .badge.ios { background: rgba(255,149,0,0.15); color: var(--ios); }
+  .badge.ios { background: rgba(0,221,205,0.15); color: var(--ios); }
   .score-neg { color: var(--neg); font-weight: 600; white-space: nowrap; }
   .score-pos { color: var(--text); font-weight: 600; white-space: nowrap; }
   .review-text { color: var(--text); }
@@ -1198,7 +1296,7 @@ function renderHtml(dataset) {
   .search-input-inline::placeholder { color: var(--muted); }
   .search-input-inline:focus {
     outline: none;
-    border-color: #FF9500;
+    border-color: #00DDCD;
   }
 
   .chart-container { position: relative; width: 100%; height: 280px; }
@@ -1411,7 +1509,7 @@ function renderHtml(dataset) {
   .jp-row-label .jp-arrow.open{ transform:rotate(180deg); }
   .jp-grid{ display:grid; grid-template-columns:repeat(14,1fr); gap:6px; flex:1; }
 
-  .jp-macro-cell{ border-radius:6px; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; min-height:32px; letter-spacing:0.04em; color:#fff; background:#2f6fed; }
+  .jp-macro-cell{ border-radius:6px; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; min-height:32px; letter-spacing:0.04em; color:#111; background:#C6F24E; }
   .jp-stage-cell{ background:#3a4560; border-radius:6px; color:#fff; font-size:9.5px; font-weight:600; text-align:center; display:flex; align-items:center; justify-content:center; min-height:36px; padding:4px 2px; transition:box-shadow .3s; }
   .jp-stage-cell.flash{ box-shadow:0 0 0 2px var(--android); }
   .jp-channel-cell{ font-size:9px; color:var(--muted); text-align:center; display:flex; align-items:center; justify-content:center; min-height:20px; }
@@ -1483,16 +1581,49 @@ function renderHtml(dataset) {
     <div class="drawer-body" id="drawerBody"></div>
   </div>
 
-  <h1>阿葛格 評論追蹤 Dashboard</h1>
+  <h1>阿葛格 評論追蹤 Dashboard <span class="status-pill status-ok mono" style="vertical-align:middle; font-size:9px; position:relative; top:-2px;">● LIVE MONITOR</span></h1>
   <div class="subtitle" id="subtitle"></div>
+  <div class="mono" id="hudStrip" style="font-size:11px; color:rgb(var(--hud-glow)); margin:-4px 0 20px; letter-spacing:0.03em; opacity:0.9;"></div>
 
-  <div class="grid grid-flow" id="summaryCards"></div>
+  <div class="group-nav">
+    <button class="group-btn active" data-group="live">
+      <span class="group-icon">🚀</span>
+      <span class="group-text"><span class="group-title">LIVE MONITOR</span><span class="group-subtitle">總覽</span></span>
+    </button>
+    <button class="group-btn" data-group="insights">
+      <span class="group-icon">⚙️</span>
+      <span class="group-text"><span class="group-title">DEEP INSIGHTS</span><span class="group-subtitle">深度洞察</span></span>
+    </button>
+    <button class="group-btn" data-group="journey">
+      <span class="group-icon">🗺️</span>
+      <span class="group-text"><span class="group-title">JOURNEY BLUEPRINT</span><span class="group-subtitle">服務藍圖</span></span>
+    </button>
+  </div>
 
+  <div class="group-panel active" id="group-live">
+    <div class="live-grid">
+      <div class="live-col-kpi" id="summaryCards"></div>
+
+      <div class="chart-card live-col-radar">
+        <h2 style="margin:0 0 2px;">健康雷達 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">5個軸分別是：抱怨/bug、功能請求、純稱讚、一般（依評論意圖分類佔比換算，總和100%）；版本穩定度＝沒有發生評分驟降的版本佔全部版本的比例。範圍越靠外圍越好，但「抱怨/bug」軸例外——越靠外圍代表抱怨佔比越高，越差。點擊任一軸可查看該類別的實際評論。</div></span></h2>
+        <div class="chart-container" style="max-width:520px; margin:0 auto; height:400px;">
+          <canvas id="healthRadarChart"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card live-col-anomaly">
+        <h2 style="margin:0 0 2px;">系統異常與熱門痛點 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">合併三個來源依「負評則數」排序：版本異常（評分驟降的版本）、熱門痛點（評論分類）、旅程痛點（服務藍圖分類）。前3名標記為CRITICAL，其餘為WARN。點擊可查看該項目的實際負評。</div></span></h2>
+        <div class="note" style="margin:2px 0 10px;">依負評則數排序，點擊可查看實際評論</div>
+        <div id="anomalyList" class="mono"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="group-panel" id="group-insights">
   <div class="tabs">
     <button class="tab-btn active" data-tab="comments">評論</button>
     <button class="tab-btn" data-tab="autosummary">自動摘要</button>
     <button class="tab-btn" data-tab="sentiment">回饋洞察</button>
-    <button class="tab-btn" data-tab="journeypain">整合式旅程痛點</button>
     <button class="tab-btn" data-tab="versionratings">版本/評分</button>
     <button class="tab-btn" data-tab="favorites">收藏</button>
   </div>
@@ -1501,7 +1632,9 @@ function renderHtml(dataset) {
     <div class="two-col">
     <div class="chart-card">
       <div class="list-header">
-        <h2 style="margin:0">每月評論趨勢</h2>
+        <h2 style="margin:0">每月評論趨勢
+          <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">每個點代表一則實際評論，滑鼠移到點上可看內容。可用上方按鈕控制縮放程度（近3個月／近6個月／近1年／全部），或用下方「上一區間／下一區間」移動檢視區間，查看更早或更晚的資料。</div></span>
+        </h2>
         <div class="toggle-group" id="rangeToggleGroup">
           <button class="toggle-btn" data-range="3">近3個月</button>
           <button class="toggle-btn active" data-range="6">近6個月</button>
@@ -1510,7 +1643,6 @@ function renderHtml(dataset) {
           <button class="toggle-btn" id="btnResetZoom">重置縮放</button>
         </div>
       </div>
-      <div class="h2-note">每個點代表一則實際評論，滑鼠移到點上可看內容</div>
       <div class="scatter-nav">
         <button class="nav-btn" id="btnPrevWindow">◀ 上一區間</button>
         <span class="note" id="scatterRangeNote" style="margin:0"></span>
@@ -1519,17 +1651,16 @@ function renderHtml(dataset) {
       <div class="chart-container">
         <canvas id="commentScatterChart" height="110"></canvas>
       </div>
-      <div class="note">用上方按鈕控制縮放程度（近3個月／近6個月／近1年／全部）；用「上一區間／下一區間」按鈕移動檢視區間，查看更早或更晚的資料。</div>
     </div>
 
     <div class="chart-card">
-      <h2>常見字詞頻率排行</h2>
-      <div class="h2-note">不分正負評，已過濾常見口語詞/語助詞</div>
+      <h2>常見字詞頻率排行
+        <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">不分正負評，已過濾常見口語詞/語助詞。用「雙字詞」統計，不是正式的中文斷詞演算法，準確度有限，僅供快速抓語感參考。點擊長條可查看包含該字詞的評論。</div></span>
+      </h2>
       <div class="chart-container" id="wordFrequencyContainer" style="height:280px;">
         <canvas id="wordFrequencyChart"></canvas>
       </div>
       <button class="nav-btn" id="btnLoadMoreWords" style="margin-top:10px;">載入更多字詞</button>
-      <div class="note">用「雙字詞」統計，不是正式的中文斷詞演算法，準確度有限，僅供快速抓語感參考。點擊長條可查看包含該字詞的評論。</div>
     </div>
     </div>
 
@@ -1563,7 +1694,10 @@ function renderHtml(dataset) {
   </div>
 
   <div class="tab-panel" id="tab-autosummary">
-    <div class="note" style="margin-bottom: 16px;">以下內容是依規則自動比對數字產生（版本評分落差、負評分類排序、月增減比較），不是 AI 理解語意後寫出來的分析，準確度以此為前提，建議搭配下方「回饋洞察」「版本」交叉確認。</div>
+    <div style="display:flex; align-items:center; gap:6px; margin-bottom:16px;">
+      <span class="status-pill status-ok mono">AUTO_SUMMARY</span>
+      <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">以下內容是依規則自動比對數字產生（版本評分落差、負評分類排序、月增減比較），不是 AI 理解語意後寫出來的分析，準確度以此為前提，建議搭配下方「回饋洞察」「版本」交叉確認。</div></span>
+    </div>
 
     <div class="three-col" style="margin-bottom: 20px;">
       <div class="chart-card" id="insightCardRegression">
@@ -1799,8 +1933,10 @@ function renderHtml(dataset) {
       <div class="note" id="favoritesNote"></div>
     </div>
   </div>
+  </div>
 
-  <div class="tab-panel" id="tab-journeypain">
+  <div class="group-panel" id="group-journey">
+  <div id="tab-journeypain">
     <div class="chart-card">
       <div class="jp-card-head">
         <div class="jp-card-head-title">
@@ -1883,6 +2019,7 @@ function renderHtml(dataset) {
       </div>
     </div>
   </div>
+  </div>
 
   <script>
     const dataset = ${dataJson};
@@ -1923,29 +2060,57 @@ function renderHtml(dataset) {
     const JOURNEY_FRONT_LABELS_CLIENT = { '選擇品牌':'','會員註冊':'註冊介面','審核身份':'審核介面','搜尋欲租車輛':'站點/地圖','預定車輛':'車輛資訊','等待取車':'訂單','前往取車':'站點/導航','取車中':'相機','使用中':'車輛控制','準備還車':'站點/導航','還車':'車輛檢查','付款':'金流方式','還車後服務':'問卷','狀況排除':'客服劇本' };
     const JOURNEY_BACK_LABELS_CLIENT = { '選擇品牌':'','會員註冊':'會員系統','審核身份':'AI/人工審核','搜尋欲租車輛':'訂單系統','預定車輛':'第三方支付','等待取車':'','前往取車':'','取車中':'','使用中':'車輛監控系統','準備還車':'車輛監控','還車':'訂單系統','付款':'第三方支付','還車後服務':'CRM','狀況排除':'客服系統' };
 
-    // ===== 記住目前分頁：重新整理網頁時停留在原本的分頁，不要都跳回「評論」 =====
-    // 在任何圖表建立之前就先切換好分頁，這樣被還原的分頁一開始就是「可見」狀態，
+    // ===== 記住目前分組/分頁：重新整理網頁時停留在原本的位置，不要都跳回「LIVE MONITOR／評論」 =====
+    // 在任何圖表建立之前就先切換好，這樣被還原的分組/分頁一開始就是「可見」狀態，
     // 圖表尺寸計算也會是正確的，不需要額外等 resize。
     const TAB_STORAGE_KEY = 'gosmart-active-tab';
-    (function restoreActiveTab() {
-      const savedTab = localStorage.getItem(TAB_STORAGE_KEY);
-      if (!savedTab) return;
-      const targetBtn = document.querySelector('.tab-btn[data-tab="' + savedTab + '"]');
-      const targetPanel = document.getElementById('tab-' + savedTab);
-      if (!targetBtn || !targetPanel) return;
-      document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
-      document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
-      targetBtn.classList.add('active');
-      targetPanel.classList.add('active');
+    const GROUP_STORAGE_KEY = 'gosmart-active-group';
+
+    function activateGroup(groupName) {
+      const btn = document.querySelector('.group-btn[data-group="' + groupName + '"]');
+      const panel = document.getElementById('group-' + groupName);
+      if (!btn || !panel) return false;
+      document.querySelectorAll('.group-btn').forEach((b) => b.classList.remove('active'));
+      document.querySelectorAll('.group-panel').forEach((p) => p.classList.remove('active'));
+      btn.classList.add('active');
+      panel.classList.add('active');
+      return true;
+    }
+
+    (function restoreActiveGroupAndTab() {
+      let savedGroup = null;
+      try { savedGroup = localStorage.getItem(GROUP_STORAGE_KEY); } catch (e) {}
+      let savedTab = null;
+      try { savedTab = localStorage.getItem(TAB_STORAGE_KEY); } catch (e) {}
+
+      // 相容舊資料：改版前「整合式旅程痛點」曾經是DEEP INSIGHTS底下的一個子分頁，
+      // 如果瀏覽器還記得那筆舊的偏好，直接導向新的JOURNEY BLUEPRINT分組。
+      if (savedTab === 'journeypain') {
+        savedGroup = 'journey';
+        savedTab = null;
+      }
+
+      if (savedGroup) activateGroup(savedGroup);
+
+      if (savedTab) {
+        const targetBtn = document.querySelector('.tab-btn[data-tab="' + savedTab + '"]');
+        const targetPanel = document.getElementById('tab-' + savedTab);
+        if (targetBtn && targetPanel) {
+          document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+          document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
+          targetBtn.classList.add('active');
+          targetPanel.classList.add('active');
+        }
+      }
     })();
 
-    // ===== 讓所有分頁在圖表建立當下都先有「正確的版面尺寸」，避免圖表在寬高是 0 的
-    //      隱藏分頁裡建立、內部座標塌陷到左上角（切換分頁時修正尺寸會變成從左上角「彈出來」的怪異動畫）=====
-    // 做法：暫時讓所有分頁都用 visibility:hidden（保留版面空間、但不會被畫出來）取代
+    // ===== 讓所有分組/分頁在圖表建立當下都先有「正確的版面尺寸」，避免圖表在寬高是 0 的
+    //      隱藏區塊裡建立、內部座標塌陷到左上角（切換時修正尺寸會變成從左上角「彈出來」的怪異動畫）=====
+    // 做法：暫時讓所有分組/分頁都用 visibility:hidden（保留版面空間、但不會被畫出來）取代
     // display:none，讓 Chart.js 在建立當下就能量到正確的寬高；因為這整段（樣式覆蓋→
     // 建立所有圖表→恢復樣式）是同一串同步執行的程式碼，瀏覽器不會在中途畫面，
     // 所以不會有「畫面暫時變很長」的閃爍問題。所有圖表都建立完成後，再恢復正常的顯示/隱藏規則。
-    const allTabPanelsForInit = document.querySelectorAll('.tab-panel');
+    const allTabPanelsForInit = document.querySelectorAll('.tab-panel, .group-panel');
     allTabPanelsForInit.forEach((p) => {
       if (!p.classList.contains('active')) {
         p.style.display = 'block';
@@ -2061,6 +2226,16 @@ function renderHtml(dataset) {
         ? '　｜ 首次產出，尚無比對基準'
         : '　｜ 與上次產出相比新增 ' + dataset.newReviewsCount.total + ' 則評論');
 
+    // ===== 頂部HUD數據列：整體健康度、總評論數（純前端從allReviewsFlat即時算出，Node端不用另外加欄位） =====
+    (function renderHudStrip() {
+      const scored = dataset.allReviewsFlat.filter(r => typeof r.score === 'number');
+      const avg = scored.length ? scored.reduce((s, r) => s + r.score, 0) / scored.length : null;
+      const healthPct = avg !== null ? (avg / 5 * 100).toFixed(1) : '—';
+      const total = dataset.allReviewsFlat.length;
+      document.getElementById('hudStrip').textContent =
+        'SYS_HEALTH: ' + healthPct + '%　TOTAL_REVIEWS: ' + total.toLocaleString('en-US');
+    })();
+
     const summaryEl = document.getElementById('summaryCards');
     const ratingsSummaryEl = document.getElementById('ratingsSummaryCards');
 
@@ -2078,10 +2253,10 @@ function renderHtml(dataset) {
         if (clickable && c.clickKey) cardClass += ' card-clickable';
         const isZeroNewCount = isNewCountCard && c.value === 0;
         const style = isZeroNewCount ? ' style="opacity:0.2"' : '';
-        const valueClass = 'value ' + c.cls + (hasNew ? ' blink-number' : '');
+        const valueClass = 'value mono ' + c.cls + (hasNew ? ' blink-number' : '');
         const clickAttr = (clickable && c.clickKey) ? ' data-click-key="' + c.clickKey + '"' : '';
         const subHtml = (c.subLabel !== undefined && c.subValue !== undefined)
-          ? '<div class="card-sub"><div class="card-sub-label">' + c.subLabel + '</div><div class="card-sub-value">' + c.subValue + '</div></div>'
+          ? '<div class="card-sub"><div class="card-sub-label">' + c.subLabel + '</div><div class="card-sub-value mono">' + c.subValue + '</div></div>'
           : '';
         const badgeHtml = c.badgeNote ? '<div class="card-badge-note">' + c.badgeNote + '</div>' : '';
         const labelHtml = '<div class="label-wrap"><div class="label">' + c.label + '</div></div>';
@@ -2101,9 +2276,144 @@ function renderHtml(dataset) {
       { label: '今年新增<br>評論數', value: dataset.thisYearTotal, cls: 'android', decimals: 0, clickKey: 'this-year-total', badgeNote: '不分平台' },
       { label: 'Google Play<br>新評論數', value: dataset.newReviewsCount.android, cls: 'new-count', decimals: 0, clickKey: 'android-new' },
       { label: 'App Store<br>新評論數', value: dataset.newReviewsCount.ios, cls: 'new-count', decimals: 0, clickKey: 'ios-new' },
-    ], { square: true, clickable: true });
+    ], { clickable: true });
 
-    // ===== 頂部四張卡片可點擊，直接跳出評論抽屜（跟其他圖表的點擊互動邏輯一致） =====
+    // ===== LIVE MONITOR：健康雷達圖（意圖分佈4軸 + 版本穩定度1軸） =====
+    (function renderHealthRadar() {
+      const canvas = document.getElementById('healthRadarChart');
+      if (!canvas || !window.Chart) return;
+
+      const intentTotal = dataset.intentOrder.reduce((s, k) => s + (dataset.intentStatsByRange.all[k] || 0), 0) || 1;
+      const intentPct = (k) => Math.round((dataset.intentStatsByRange.all[k] || 0) / intentTotal * 100);
+
+      const versionAnalysis = dataset.versionAnalysis || [];
+      const totalVersions = versionAnalysis.length;
+      const regressionCount = versionAnalysis.filter(v => v.isRegression).length;
+      const versionStability = totalVersions > 0 ? Math.round((1 - regressionCount / totalVersions) * 100) : 100;
+
+      const labels = ['抱怨/bug', '功能請求', '純稱讚', '一般', '版本穩定度'];
+      const values = [intentPct('抱怨/bug'), intentPct('功能請求'), intentPct('純稱讚'), intentPct('一般'), versionStability];
+
+      // canvas 的顏色設定不支援 var(--xxx) 語法（那是CSS層級的東西，canvas 2D context不會解析），
+      // 這裡先用 getComputedStyle 把主色的實際RGB值讀出來，再組成 canvas 看得懂的字串。
+      const glowRgb = getComputedStyle(document.documentElement).getPropertyValue('--hud-glow').trim() || '198, 242, 78';
+
+      new Chart(canvas, {
+        type: 'radar',
+        data: {
+          labels,
+          datasets: [{
+            label: '整體健康度',
+            data: values,
+            borderColor: 'rgb(' + glowRgb + ')',
+            backgroundColor: 'rgba(' + glowRgb + ', 0.15)',
+            pointBackgroundColor: 'rgb(' + glowRgb + ')',
+            pointBorderColor: '#0f1115',
+            pointHoverRadius: 6,
+            borderWidth: 2,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            r: {
+              min: 0, max: 100,
+              angleLines: { color: 'rgba(255,255,255,0.08)' },
+              grid: { color: 'rgba(255,255,255,0.08)' },
+              pointLabels: { color: '#9aa0ac', font: { family: 'JetBrains Mono, monospace', size: 11 } },
+              ticks: { display: false, stepSize: 25 },
+            },
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => ctx.label + '：' + ctx.raw + '%（點擊查看評論）',
+              },
+            },
+          },
+          onClick: (evt, elements) => {
+            if (!elements.length) return;
+            const key = labels[elements[0].index];
+            let matched, title;
+            if (key === '版本穩定度') {
+              const regressionVersions = new Set(versionAnalysis.filter(v => v.isRegression).map(v => v.version));
+              matched = dataset.allReviewsFlat.filter(r => r.platform === 'android' && regressionVersions.has(r.version) && r.sentiment === 'negative');
+              title = '版本異常相關負評';
+            } else {
+              matched = dataset.allReviewsFlat.filter(r => r.intent === key);
+              title = key + ' 的評論';
+            }
+            openReviewDrawer(title, '共 ' + matched.length + ' 則', matched);
+          },
+        },
+      });
+    })();
+
+    // ===== LIVE MONITOR：整合告警清單（版本異常＋熱門痛點＋旅程痛點，依負評則數排序） =====
+    (function renderAnomalyList() {
+      const container = document.getElementById('anomalyList');
+      if (!container) return;
+
+      const items = [];
+
+      (dataset.versionRegressions || []).forEach((v) => {
+        items.push({
+          typeShort: 'VERSION',
+          label: 'v' + v.version + ' 評分驟降 ' + v.scoreDrop.toFixed(2) + ' 分',
+          count: v.negativeCount,
+          onClick: () => {
+            const matched = dataset.allReviewsFlat.filter(r => r.platform === 'android' && r.version === v.version && r.sentiment === 'negative');
+            openReviewDrawer('v' + v.version + ' 的負評', '共 ' + matched.length + ' 則', matched);
+          },
+        });
+      });
+
+      (dataset.topPainPoints || []).forEach((p) => {
+        items.push({
+          typeShort: 'PAIN',
+          label: p.category,
+          count: p.negativeCount,
+          onClick: () => {
+            const matched = dataset.allReviewsFlat.filter(r => r.categories.includes(p.category) && r.sentiment === 'negative');
+            openReviewDrawer(p.category + ' 的歷史負評', '共 ' + matched.length + ' 則', matched);
+          },
+        });
+      });
+
+      (dataset.journeyPainPoints || []).forEach((p) => {
+        if (!p.count) return;
+        items.push({
+          typeShort: 'JOURNEY',
+          label: p.code + ' ' + p.label + '（' + p.stage + '）',
+          count: p.count,
+          onClick: () => {
+            const matched = dataset.allReviewsFlat.filter(r => r.categories.includes(p.category) && r.sentiment === 'negative');
+            openReviewDrawer(p.code + ' · ' + p.label, '共 ' + matched.length + ' 則', matched);
+          },
+        });
+      });
+
+      items.sort((a, b) => b.count - a.count);
+      const top = items.slice(0, 10);
+
+      container.innerHTML = top.map((item, i) => {
+        const severity = i < 3 ? 'critical' : 'warn';
+        return '<div class="anomaly-row">' +
+          '<span class="anomaly-severity ' + severity + '"></span>' +
+          '<span class="anomaly-tag-type">' + item.typeShort + '</span>' +
+          '<span class="anomaly-label">' + item.label + '</span>' +
+          '<span class="anomaly-count">' + item.count + '則</span>' +
+          '</div>';
+      }).join('') || '<div class="note">目前沒有明顯異常</div>';
+
+      container.querySelectorAll('.anomaly-row').forEach((el, i) => {
+        el.addEventListener('click', () => top[i].onClick());
+      });
+    })();
+
+
     const cardClickMap = {
       'android-total': {
         title: 'Google Play 全部評論',
@@ -2708,6 +3018,22 @@ function renderHtml(dataset) {
       });
     });
 
+    // ===== 大分組切換（LIVE MONITOR / DEEP INSIGHTS / JOURNEY BLUEPRINT） =====
+    document.querySelectorAll('.group-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        activateGroup(btn.dataset.group);
+        try { localStorage.setItem(GROUP_STORAGE_KEY, btn.dataset.group); } catch (e) {}
+        if (btn.dataset.group === 'journey' && window.jpRedrawDividers) {
+          requestAnimationFrame(() => window.jpRedrawDividers());
+        }
+        if (window.Chart && Chart.instances) {
+          requestAnimationFrame(() => {
+            Object.values(Chart.instances).forEach(c => { try { c.resize(); } catch (e) {} });
+          });
+        }
+      });
+    });
+
     // ===== 瀏覽器視窗尺寸改變時（例如把視窗縮小），讓所有圖表重新計算正確尺寸 =====
     // 這裡只在「真的改變視窗大小」時觸發，跟切換分頁的動畫重播是兩件獨立的事，
     // 不會重新引入「切換分頁時圖表從左上角彈出來」那個問題。
@@ -2925,7 +3251,7 @@ function renderHtml(dataset) {
         labels: dataset.intentOrder,
         datasets: [{
           data: dataset.intentOrder.map(k => dataset.intentStatsByRange.all[k] || 0),
-          backgroundColor: ['#ff6b6b', '#FF9500', '#c6f24e', '#5b6272'],
+          backgroundColor: ['#ff6b6b', '#00DDCD', '#c6f24e', '#5b6272'],
         }],
       },
       options: {
@@ -3279,7 +3605,7 @@ function renderHtml(dataset) {
             {
               label: 'App Store',
               data: iosPoints,
-              backgroundColor: 'rgba(255,149,0,' + (pointAlpha + 0.05) + ')',
+              backgroundColor: 'rgba(0,221,205,' + (pointAlpha + 0.05) + ')',
               pointRadius,
               pointHoverRadius: pointRadius + 3,
             },
@@ -4036,8 +4362,8 @@ function renderHtml(dataset) {
           {
             label: 'App Store 平均星等',
             data: dataset.monthlyStats.map(d => d.iosAvg),
-            borderColor: '#FF9500',
-            backgroundColor: 'rgba(255,149,0,0.1)',
+            borderColor: '#00DDCD',
+            backgroundColor: 'rgba(0,221,205,0.1)',
             tension: 0.3,
             spanGaps: true,
           },
@@ -4077,13 +4403,26 @@ function renderHtml(dataset) {
       });
     }
     distChart('androidDistChart', dataset.androidDist, '#c6f24e');
-    distChart('iosDistChart', dataset.iosDist, '#FF9500');
+    distChart('iosDistChart', dataset.iosDist, '#00DDCD');
 
     // ===== 所有圖表都建立完成，現在把剛才暫時的「有版面但看不見」樣式清乾淨，
     //      恢復成正常的分頁顯示/隱藏規則（靠 .tab-panel.active 這個 class 控制）=====
     allTabPanelsForInit.forEach((p) => {
       p.style.display = '';
       p.style.visibility = '';
+    });
+
+    // ===== 說明文字 tooltip（info-hint）：桌機可hover，觸控裝置點擊切換顯示 =====
+    document.querySelectorAll('.info-hint').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const wasOpen = el.classList.contains('open');
+        document.querySelectorAll('.info-hint.open').forEach(o => { if (o !== el) o.classList.remove('open'); });
+        el.classList.toggle('open', !wasOpen);
+      });
+    });
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.info-hint.open').forEach(o => o.classList.remove('open'));
     });
   </script>
 </body>
