@@ -671,6 +671,13 @@ function buildDataset(dailyRuns, fullHistory, manualReviews) {
   }
   const wordFrequency = extractWordFrequency(allReviewsFlatWithManual);
 
+  // ===== 近期熱門負評關鍵字（LIVE MONITOR 用）：近半年（6個月）的負評，套用同一套雙字詞邏輯 =====
+  const recentMonthsForKeywords = recentMonths6;
+  const recentNegativeReviews = allReviewsFlatWithManual.filter(
+    (r) => r.sentiment === 'negative' && recentMonthsForKeywords.includes(r.month)
+  );
+  const recentNegativeWordFrequency = extractWordFrequency(recentNegativeReviews).slice(0, 15);
+
   const otherCount = allReviewsFlatWithManual.filter((r) => r.categories.includes(OTHER_CATEGORY)).length;
 
   const overallRange = () => {
@@ -721,6 +728,7 @@ function buildDataset(dailyRuns, fullHistory, manualReviews) {
     trendChanges,
     recentMonths6,
     wordFrequency,
+    recentNegativeWordFrequency,
     journeyPainPoints: computeJourneyPainPoints(allReviewsFlatWithManual),
   };
 }
@@ -1057,7 +1065,7 @@ function renderHtml(dataset) {
   .anomaly-severity{ width:6px; height:6px; border-radius:50%; flex-shrink:0; }
   .anomaly-severity.critical{ background:#FF3860; box-shadow:0 0 6px rgba(255,56,96,0.8); }
   .anomaly-severity.warn{ background:#FFAA00; }
-  .anomaly-tag-type{ font-size:9px; color:var(--muted); width:56px; flex-shrink:0; letter-spacing:0.03em; }
+  .anomaly-tag-type{ font-size:10px; color:var(--muted); width:34px; flex-shrink:0; letter-spacing:0.03em; }
   .anomaly-label{ flex:1; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .anomaly-count{ color:var(--muted); font-size:11px; flex-shrink:0; }
 
@@ -1087,6 +1095,21 @@ function renderHtml(dataset) {
   }
   .anomaly-row{ animation: anomalyRowIn 0.35s ease-out both; }
 
+  .anomaly-divider{ border-top:1px solid var(--border); margin:16px 0 14px; }
+  .keyword-cloud{ display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; }
+  .keyword-chip{
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    padding: 3px 11px;
+    border-radius: 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    cursor: pointer;
+    line-height: 1.6;
+    transition: border-color .15s, color .15s;
+  }
+  .keyword-chip:hover{ border-color: rgb(var(--hud-glow)); color: rgb(var(--hud-glow)); }
+
   .live-grid{
     display:grid;
     grid-template-columns: 1fr 1.6fr 1fr;
@@ -1096,11 +1119,36 @@ function renderHtml(dataset) {
   @media (max-width:1100px){
     .live-grid{ grid-template-columns: 1fr; }
   }
+  .live-col-3{
+    display:flex;
+    flex-direction:column;
+    gap:20px;
+  }
+  .live-col-3 .live-col-anomaly{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+  }
+  .live-col-3 .live-col-anomaly #anomalyList{
+    flex:1;
+    overflow-y:auto;
+    min-height:0;
+  }
   .live-col-kpi{
     display:grid; grid-template-columns: 1fr 1fr; gap:14px;
   }
   .live-col-kpi .card:nth-child(3){ grid-column: 1 / -1; }
   .live-col-radar, .live-col-anomaly{ margin-bottom:0; }
+  .chart-card.live-col-radar{
+    padding-left: 0;
+    padding-right: 0;
+    padding-bottom: 0;
+    overflow: hidden;
+  }
+  .live-col-radar .radar-scan-wrap{
+    border-radius: 0 0 12px 12px;
+  }
 
   .chart-card {
     background: rgba(23, 26, 33, 0.82);
@@ -1707,20 +1755,38 @@ function renderHtml(dataset) {
 
   <div class="group-panel active" id="group-live">
     <div class="live-grid">
-      <div class="live-col-kpi" id="summaryCards"></div>
+      <div class="live-col-1">
+        <div class="live-col-kpi" id="summaryCards"></div>
+
+        <div class="chart-card" style="margin-top:20px;">
+          <h2 style="margin:0 0 2px;">平台佔比</h2>
+          <div class="note" style="margin:2px 0 8px;">Android／iOS 評論數量佔比</div>
+          <div class="chart-container" style="max-width:220px; margin:0 auto; height:200px;">
+            <canvas id="platformRatioChart"></canvas>
+          </div>
+        </div>
+      </div>
 
       <div class="chart-card live-col-radar">
-        <h2 style="margin:0 0 2px;">健康雷達 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">5個軸分別是：抱怨/bug、功能請求、純稱讚、一般（依評論意圖分類佔比換算，總和100%）；版本穩定度＝沒有發生評分驟降的版本佔全部版本的比例。範圍越靠外圍越好，但「抱怨/bug」軸例外——越靠外圍代表抱怨佔比越高，越差。點擊任一軸可查看該類別的實際評論。</div></span></h2>
-        <div class="chart-container radar-scan-wrap" style="max-width:520px; margin:0 auto; height:400px; position:relative;">
+        <h2 style="margin:0 0 2px; padding:0 20px;">健康雷達 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">5個軸分別是：抱怨/bug、功能請求、純稱讚、一般（依評論意圖分類佔比換算，總和100%）；版本穩定度＝沒有發生評分驟降的版本佔全部版本的比例。範圍越靠外圍越好，但「抱怨/bug」軸例外——越靠外圍代表抱怨佔比越高，越差。實線（本期）＝依資料日期範圍中點切分後較新的一半，虛線（上期）＝較舊的一半，供對照趨勢。點擊「本期」的軸可查看該類別的實際評論。</div></span></h2>
+        <div class="chart-container radar-scan-wrap" style="height:400px; position:relative;">
           <div class="radar-sweep"></div>
           <canvas id="healthRadarChart"></canvas>
         </div>
       </div>
 
-      <div class="chart-card live-col-anomaly">
-        <h2 style="margin:0 0 2px;">系統異常與熱門痛點 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">合併三個來源依「負評則數」排序：版本異常（評分驟降的版本）、熱門痛點（評論分類）、旅程痛點（服務藍圖分類）。前3名標記為CRITICAL，其餘為WARN。點擊可查看該項目的實際負評。</div></span></h2>
-        <div class="note" style="margin:2px 0 10px;">依負評則數排序，點擊可查看實際評論</div>
-        <div id="anomalyList" class="mono"></div>
+      <div class="live-col-3">
+        <div class="chart-card live-col-anomaly">
+          <h2 style="margin:0 0 2px;">系統異常與熱門痛點 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">合併三個來源依「負評則數」排序：版本異常（評分驟降的版本）、熱門痛點（評論分類）、旅程痛點（服務藍圖分類）。前3名標記為CRITICAL，其餘為WARN。點擊可查看該項目的實際負評。</div></span></h2>
+          <div class="note" style="margin:2px 0 10px;">依負評則數排序，點擊可查看實際評論</div>
+          <div id="anomalyList" class="mono"></div>
+        </div>
+
+        <div class="chart-card">
+          <h2 style="margin:0 0 2px;">近期熱門負評關鍵字 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">取最近半年（6個月）的負評，用「雙字詞」統計常見詞彙（跟評論tab的字詞頻率排行同一套邏輯），字越大代表出現次數越多。點擊可查看包含該詞的負評。</div></span></h2>
+          <div class="note" style="margin:2px 0 10px;">最近半年負評，字越大出現越頻繁</div>
+          <div id="keywordCloud" class="keyword-cloud"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -2389,16 +2455,49 @@ function renderHtml(dataset) {
       const canvas = document.getElementById('healthRadarChart');
       if (!canvas || !window.Chart) return;
 
-      const intentTotal = dataset.intentOrder.reduce((s, k) => s + (dataset.intentStatsByRange.all[k] || 0), 0) || 1;
-      const intentPct = (k) => Math.round((dataset.intentStatsByRange.all[k] || 0) / intentTotal * 100);
+      // ===== 依資料的日期範圍中點，切成「本期」／「上期」兩段，讓雷達圖可以疊加對照線 =====
+      const allReviews = dataset.allReviewsFlat || [];
+      const parsedDates = allReviews.map(r => new Date(r.date)).filter(d => !isNaN(d));
+      let midDate = null;
+      if (parsedDates.length) {
+        const minTime = Math.min(...parsedDates.map(d => d.getTime()));
+        const maxTime = Math.max(...parsedDates.map(d => d.getTime()));
+        midDate = new Date((minTime + maxTime) / 2);
+      }
 
+      function intentPctFor(reviews) {
+        const total = reviews.length || 1;
+        const count = (k) => reviews.filter(r => r.intent === k).length;
+        return {
+          '抱怨/bug': Math.round(count('抱怨/bug') / total * 100),
+          '功能請求': Math.round(count('功能請求') / total * 100),
+          '純稱讚': Math.round(count('純稱讚') / total * 100),
+          '一般': Math.round(count('一般') / total * 100),
+        };
+      }
+
+      const currentReviews = midDate ? allReviews.filter(r => new Date(r.date) >= midDate) : allReviews;
+      const previousReviews = midDate ? allReviews.filter(r => new Date(r.date) < midDate) : [];
+
+      const currentIntent = intentPctFor(currentReviews);
+      const previousIntent = intentPctFor(previousReviews);
+
+      // 版本穩定度：把版本依序切成前半／後半，各自算「非驟降版本」佔比，當作「上期／本期」的粗略對照
       const versionAnalysis = dataset.versionAnalysis || [];
-      const totalVersions = versionAnalysis.length;
-      const regressionCount = versionAnalysis.filter(v => v.isRegression).length;
-      const versionStability = totalVersions > 0 ? Math.round((1 - regressionCount / totalVersions) * 100) : 100;
+      function stabilityFor(list) {
+        if (!list.length) return 100;
+        const regressions = list.filter(v => v.isRegression).length;
+        return Math.round((1 - regressions / list.length) * 100);
+      }
+      const halfIdx = Math.ceil(versionAnalysis.length / 2);
+      const previousVersions = versionAnalysis.slice(0, halfIdx);
+      const currentVersions = versionAnalysis.slice(halfIdx);
+      const currentStability = stabilityFor(currentVersions.length ? currentVersions : versionAnalysis);
+      const previousStability = stabilityFor(previousVersions.length ? previousVersions : versionAnalysis);
 
       const labels = ['抱怨/bug', '功能請求', '純稱讚', '一般', '版本穩定度'];
-      const values = [intentPct('抱怨/bug'), intentPct('功能請求'), intentPct('純稱讚'), intentPct('一般'), versionStability];
+      const currentValues = [currentIntent['抱怨/bug'], currentIntent['功能請求'], currentIntent['純稱讚'], currentIntent['一般'], currentStability];
+      const previousValues = [previousIntent['抱怨/bug'], previousIntent['功能請求'], previousIntent['純稱讚'], previousIntent['一般'], previousStability];
 
       // canvas 的顏色設定不支援 var(--xxx) 語法（那是CSS層級的東西，canvas 2D context不會解析），
       // 這裡先用 getComputedStyle 把主色的實際RGB值讀出來，再組成 canvas 看得懂的字串。
@@ -2408,17 +2507,31 @@ function renderHtml(dataset) {
         type: 'radar',
         data: {
           labels,
-          datasets: [{
-            label: '整體健康度',
-            data: values,
-            borderColor: 'rgb(' + glowRgb + ')',
-            backgroundColor: 'rgba(' + glowRgb + ', 0.15)',
-            pointBackgroundColor: 'rgb(' + glowRgb + ')',
-            pointBorderColor: '#0f1115',
-            pointRadius: 6,
-            pointHoverRadius: 9,
-            borderWidth: 2,
-          }],
+          datasets: [
+            {
+              label: '本期',
+              data: currentValues,
+              borderColor: 'rgb(' + glowRgb + ')',
+              backgroundColor: 'rgba(' + glowRgb + ', 0.15)',
+              pointBackgroundColor: 'rgb(' + glowRgb + ')',
+              pointBorderColor: '#0f1115',
+              pointRadius: 6,
+              pointHoverRadius: 9,
+              borderWidth: 2,
+            },
+            {
+              label: '上期',
+              data: previousValues,
+              borderColor: 'rgba(154,160,172,0.7)',
+              backgroundColor: 'rgba(154,160,172,0.06)',
+              pointBackgroundColor: 'rgba(154,160,172,0.7)',
+              pointBorderColor: '#0f1115',
+              pointRadius: 4,
+              pointHoverRadius: 7,
+              borderWidth: 1.5,
+              borderDash: [4, 3],
+            },
+          ],
         },
         options: {
           responsive: true,
@@ -2434,16 +2547,22 @@ function renderHtml(dataset) {
             },
           },
           plugins: {
-            legend: { display: false },
+            legend: {
+              display: true,
+              position: 'bottom',
+              labels: { color: '#9aa0ac', font: { family: 'JetBrains Mono, monospace', size: 10 }, boxWidth: 12, padding: 12 },
+            },
             tooltip: {
               callbacks: {
-                label: (ctx) => ctx.label + '：' + ctx.raw + '%（點擊查看評論）',
+                label: (ctx) => ctx.dataset.label + ' · ' + ctx.label + '：' + ctx.raw + '%' + (ctx.datasetIndex === 0 ? '（點擊查看評論）' : ''),
               },
             },
           },
           onClick: (evt, elements) => {
             if (!elements.length) return;
-            const key = labels[elements[0].index];
+            const el = elements.find(e => e.datasetIndex === 0) || elements[0];
+            if (el.datasetIndex !== 0) return; // 只有「本期」那條線可以點擊查看評論，「上期」是對照用
+            const key = labels[el.index];
             let matched, title;
             if (key === '版本穩定度') {
               const regressionVersions = new Set(versionAnalysis.filter(v => v.isRegression).map(v => v.version));
@@ -2459,6 +2578,52 @@ function renderHtml(dataset) {
       });
     })();
 
+    // ===== LIVE MONITOR：平台佔比小圖表（補左欄高度，同時是有用的資訊） =====
+    (function renderPlatformRatioChart() {
+      const canvas = document.getElementById('platformRatioChart');
+      if (!canvas || !window.Chart) return;
+
+      const androidCount = (dataset.allReviewsFlat || []).filter(r => r.platform === 'android').length;
+      const iosCount = (dataset.allReviewsFlat || []).filter(r => r.platform === 'ios').length;
+
+      new Chart(canvas, {
+        type: 'doughnut',
+        data: {
+          labels: ['Android', 'iOS'],
+          datasets: [{
+            data: [androidCount, iosCount],
+            backgroundColor: ['#C6F24E', '#00DDCD'],
+            borderColor: '#0f1115',
+            borderWidth: 2,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '65%',
+          animation: { duration: 900, easing: 'easeOutQuart' },
+          plugins: {
+            legend: {
+              display: true,
+              position: 'bottom',
+              labels: { color: '#9aa0ac', font: { family: 'JetBrains Mono, monospace', size: 10 }, boxWidth: 10, padding: 10 },
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => ctx.label + '：' + ctx.raw + ' 則',
+              },
+            },
+          },
+          onClick: (evt, elements) => {
+            if (!elements.length) return;
+            const platform = elements[0].index === 0 ? 'android' : 'ios';
+            const matched = dataset.allReviewsFlat.filter(r => r.platform === platform);
+            openReviewDrawer((platform === 'android' ? 'Android' : 'iOS') + ' 的評論', '共 ' + matched.length + ' 則', matched);
+          },
+        },
+      });
+    })();
+
     // ===== LIVE MONITOR：整合告警清單（版本異常＋熱門痛點＋旅程痛點，依負評則數排序） =====
     (function renderAnomalyList() {
       const container = document.getElementById('anomalyList');
@@ -2468,7 +2633,7 @@ function renderHtml(dataset) {
 
       (dataset.versionRegressions || []).forEach((v) => {
         items.push({
-          typeShort: 'VERSION',
+          typeShort: '版本',
           label: 'v' + v.version + ' 評分驟降 ' + v.scoreDrop.toFixed(2) + ' 分',
           count: v.negativeCount,
           onClick: () => {
@@ -2480,7 +2645,7 @@ function renderHtml(dataset) {
 
       (dataset.topPainPoints || []).forEach((p) => {
         items.push({
-          typeShort: 'PAIN',
+          typeShort: '痛點',
           label: p.category,
           count: p.negativeCount,
           onClick: () => {
@@ -2493,7 +2658,7 @@ function renderHtml(dataset) {
       (dataset.journeyPainPoints || []).forEach((p) => {
         if (!p.count) return;
         items.push({
-          typeShort: 'JOURNEY',
+          typeShort: '旅程',
           label: p.code + ' ' + p.label + '（' + p.stage + '）',
           count: p.count,
           onClick: () => {
@@ -2504,7 +2669,7 @@ function renderHtml(dataset) {
       });
 
       items.sort((a, b) => b.count - a.count);
-      const top = items.slice(0, 10);
+      const top = items.slice(0, 12);
 
       container.innerHTML = top.map((item, i) => {
         const severity = i < 3 ? 'critical' : 'warn';
@@ -2520,6 +2685,66 @@ function renderHtml(dataset) {
         el.addEventListener('click', () => top[i].onClick());
       });
     })();
+
+    // ===== LIVE MONITOR：近期熱門負評關鍵字標籤雲 =====
+    (function renderKeywordCloud() {
+      const container = document.getElementById('keywordCloud');
+      if (!container) return;
+
+      const words = dataset.recentNegativeWordFrequency || [];
+      if (!words.length) {
+        container.innerHTML = '<div class="note">最近半年沒有足夠的負評關鍵字資料</div>';
+        return;
+      }
+
+      const maxCount = Math.max(...words.map(w => w.count));
+      const minCount = Math.min(...words.map(w => w.count));
+      const range = maxCount - minCount || 1;
+
+      container.innerHTML = words.map((w) => {
+        const t = (w.count - minCount) / range; // 0~1
+        const fontSize = Math.round(12 + t * 12); // 12px ~ 24px
+        return '<span class="keyword-chip" data-word="' + w.word + '" style="font-size:' + fontSize + 'px;">' + w.word + '（' + w.count + '）</span>';
+      }).join('');
+
+      container.querySelectorAll('.keyword-chip').forEach((el) => {
+        el.addEventListener('click', () => {
+          const word = el.dataset.word;
+          const matched = dataset.allReviewsFlat.filter(r => r.sentiment === 'negative' && (r.text || '').includes(word));
+          openReviewDrawer('「' + word + '」相關負評', '共 ' + matched.length + ' 則', matched);
+        });
+      });
+    })();
+
+    // ===== LIVE MONITOR：讓右欄（異常清單＋關鍵字雲）的底部，精準對齊左欄（KPI＋平台佔比）的底部 =====
+    // 不依賴CSS Grid的align-items:stretch（不同瀏覽器對「grid item裡面還是flex容器」這種巢狀情境
+    // 的處理不一致，實測發現不可靠），改用JS直接量兩欄實際的像素高度，強制設定右欄容器高度，
+    // 讓內部的flex:1（異常清單）去吸收多出來的空間，關鍵字雲的底部自然就會對齊左欄底部。
+    function syncLiveColumnHeights() {
+      const col1 = document.querySelector('.live-col-1');
+      const col3 = document.querySelector('.live-col-3');
+      if (!col1 || !col3) return;
+
+      // 窄螢幕時 .live-grid 會變成單欄堆疊（見 CSS 的 max-width:1100px），這時候不需要（也不應該）
+      // 強制對齊高度，直接清掉先前可能設過的高度即可。
+      if (window.innerWidth <= 1100) {
+        col3.style.height = '';
+        return;
+      }
+
+      col3.style.height = ''; // 先清掉，重新量一次原始高度，避免疊加誤差
+      const col1Rect = col1.getBoundingClientRect();
+      const col3Rect = col3.getBoundingClientRect();
+      const targetHeight = col1Rect.bottom - col3Rect.top;
+
+      if (targetHeight > 0) {
+        col3.style.height = targetHeight + 'px';
+      }
+    }
+
+    // 用 requestAnimationFrame 確保在圖表都畫完、實際版面穩定後才量測
+    requestAnimationFrame(() => requestAnimationFrame(syncLiveColumnHeights));
+    window.addEventListener('resize', syncLiveColumnHeights);
 
 
     const cardClickMap = {
