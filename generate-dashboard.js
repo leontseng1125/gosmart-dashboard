@@ -781,6 +781,7 @@ function renderHtml(dataset) {
     display: flex;
     flex-wrap: wrap;
     gap: 16px;
+    align-items: flex-start;
   }
   .card {
     background: #C6F24E;
@@ -830,6 +831,10 @@ function renderHtml(dataset) {
     right: 12px;
     bottom: 8px;
     line-height: 1.3;
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    white-space: nowrap;
   }
   .card-sub-label {
     font-size: 9px;
@@ -1212,6 +1217,9 @@ function renderHtml(dataset) {
     .card.card-square { width: 108px; padding: 8px 10px; }
     .card.card-square .label { font-size: 13px; }
     .card.card-square .value { font-size: 24px; }
+    .card-sub { left: 10px; right: 10px; bottom: 6px; }
+    .card-sub-label { font-size: 8px; }
+    .card-sub-value { font-size: 10px; }
     .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; }
     .tab-btn { padding: 9px 12px; font-size: 13px; white-space: nowrap; }
     .chart-card { padding: 14px; margin-bottom: 16px; }
@@ -2088,8 +2096,8 @@ function renderHtml(dataset) {
     }
 
     renderCardGroup(summaryEl, [
-      { label: 'Google Play<br>累積評論數', value: dataset.androidTotal, cls: 'android', decimals: 0, clickKey: 'android-total', subLabel: '實際總數(含手動補充)', subValue: dataset.actualAndroidTotal },
-      { label: 'App Store<br>累積評論數', value: dataset.iosTotal, cls: 'ios-lime', decimals: 0, clickKey: 'ios-total', subLabel: '實際總數(含手動補充)', subValue: dataset.actualIosTotal },
+      { label: 'Google Play<br>累積評論數', value: dataset.androidTotal, cls: 'android', decimals: 0, clickKey: 'android-total', subLabel: '爬蟲+手動：', subValue: dataset.actualAndroidTotal },
+      { label: 'App Store<br>累積評論數', value: dataset.iosTotal, cls: 'ios-lime', decimals: 0, clickKey: 'ios-total', subLabel: '爬蟲+手動：', subValue: dataset.actualIosTotal },
       { label: '今年新增<br>評論數', value: dataset.thisYearTotal, cls: 'android', decimals: 0, clickKey: 'this-year-total', badgeNote: '不分平台' },
       { label: 'Google Play<br>新評論數', value: dataset.newReviewsCount.android, cls: 'new-count', decimals: 0, clickKey: 'android-new' },
       { label: 'App Store<br>新評論數', value: dataset.newReviewsCount.ios, cls: 'new-count', decimals: 0, clickKey: 'ios-new' },
