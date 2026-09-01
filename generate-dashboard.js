@@ -801,6 +801,30 @@ function renderHtml(dataset) {
     background: var(--bg);
     color: var(--text);
     padding: 32px;
+    position: relative;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    pointer-events: none;
+    background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);
+    background-size: 26px 26px;
+  }
+  body::after {
+    content: '';
+    position: fixed;
+    inset: -30%;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(120deg, transparent 42%, rgba(var(--hud-glow), 0.05) 50%, transparent 58%);
+    animation: bgScanSweep 10s ease-in-out infinite;
+  }
+  @keyframes bgScanSweep {
+    0%   { transform: translate(-15%, -15%); }
+    50%  { transform: translate(15%, 15%); }
+    100% { transform: translate(-15%, -15%); }
   }
   h1 {
     font-size: 22px;
@@ -830,6 +854,27 @@ function renderHtml(dataset) {
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 18px 20px;
+    position: relative;
+  }
+  .card::before, .card::after {
+    content: '';
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    pointer-events: none;
+    border: 1.5px solid rgba(26, 26, 26, 0.4);
+  }
+  .card::before {
+    top: 5px;
+    left: 5px;
+    border-right: none;
+    border-bottom: none;
+  }
+  .card::after {
+    bottom: 5px;
+    right: 5px;
+    border-left: none;
+    border-top: none;
   }
   .card.card-square {
     aspect-ratio: 1 / 1;
@@ -994,6 +1039,7 @@ function renderHtml(dataset) {
   .group-btn:hover{ border-color: rgba(var(--hud-glow), 0.35); }
   .group-btn.active{
     border-color: rgb(var(--hud-glow));
+    background: rgba(var(--hud-glow), 0.15);
     box-shadow: 0 0 15px rgba(var(--hud-glow), 0.15);
   }
   .group-icon{ font-size:22px; line-height:1; flex-shrink:0; }
@@ -1014,6 +1060,32 @@ function renderHtml(dataset) {
   .anomaly-tag-type{ font-size:9px; color:var(--muted); width:56px; flex-shrink:0; letter-spacing:0.03em; }
   .anomaly-label{ flex:1; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .anomaly-count{ color:var(--muted); font-size:11px; flex-shrink:0; }
+
+  .radar-scan-wrap{ overflow: hidden; border-radius: 8px; position: relative; }
+  .radar-sweep{
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 260%;
+    height: 260%;
+    z-index: 2;
+    pointer-events: none;
+    border-radius: 50%;
+    background: conic-gradient(from 0deg, rgba(var(--hud-glow), 0.28), transparent 30%, transparent 100%);
+    mix-blend-mode: screen;
+    transform: translate(-50%, -50%) rotate(0deg);
+    animation: radarSweepSpin 4s linear infinite;
+  }
+  @keyframes radarSweepSpin {
+    from { transform: translate(-50%, -50%) rotate(0deg); }
+    to   { transform: translate(-50%, -50%) rotate(360deg); }
+  }
+
+  @keyframes anomalyRowIn {
+    from { opacity: 0; transform: translateX(8px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .anomaly-row{ animation: anomalyRowIn 0.35s ease-out both; }
 
   .live-grid{
     display:grid;
@@ -1039,6 +1111,29 @@ function renderHtml(dataset) {
     padding: 20px;
     margin-bottom: 24px;
     box-shadow: 0 0 15px rgba(var(--hud-glow), 0.06);
+    position: relative;
+  }
+  .chart-card::before, .chart-card::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    pointer-events: none;
+    border: 1px solid rgba(var(--hud-glow), 0.55);
+  }
+  .chart-card::before {
+    top: -1px;
+    left: -1px;
+    border-right: none;
+    border-bottom: none;
+    border-radius: 4px 0 0 0;
+  }
+  .chart-card::after {
+    bottom: -1px;
+    right: -1px;
+    border-left: none;
+    border-top: none;
+    border-radius: 0 0 4px 0;
   }
   .chart-card h2 { font-size: 14px; margin: 0 0 16px; color: var(--muted); font-weight: 500; }
   .h2-note {
@@ -1311,13 +1406,23 @@ function renderHtml(dataset) {
     .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 18px; }
     .card { padding: 12px 14px; }
     .card .label { font-size: 11px; }
-    .card .value { font-size: 20px; }
+    .card .value { font-size: 32px; line-height: 1.1; margin-bottom: 4px; }
     .card.card-square { width: 108px; padding: 8px 10px; }
     .card.card-square .label { font-size: 13px; }
     .card.card-square .value { font-size: 24px; }
-    .card-sub { left: 10px; right: 10px; bottom: 6px; }
-    .card-sub-label { font-size: 8px; }
-    .card-sub-value { font-size: 10px; }
+    .card-sub {
+      position: static;
+      left: auto; right: auto; bottom: auto;
+      margin-top: 6px;
+    }
+    .card-sub-label { font-size: 10px; }
+    .card-sub-value { font-size: 12px; }
+    .card-badge-note {
+      position: static;
+      display: block;
+      text-align: right;
+      margin-top: 4px;
+    }
     .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; }
     .tab-btn { padding: 9px 12px; font-size: 13px; white-space: nowrap; }
     .chart-card { padding: 14px; margin-bottom: 16px; }
@@ -1581,7 +1686,7 @@ function renderHtml(dataset) {
     <div class="drawer-body" id="drawerBody"></div>
   </div>
 
-  <h1>阿葛格 評論追蹤 Dashboard <span class="status-pill status-ok mono" style="vertical-align:middle; font-size:9px; position:relative; top:-2px;">● LIVE MONITOR</span></h1>
+  <h1>阿葛格 評論追蹤 Dashboard</h1>
   <div class="subtitle" id="subtitle"></div>
   <div class="mono" id="hudStrip" style="font-size:11px; color:rgb(var(--hud-glow)); margin:-4px 0 20px; letter-spacing:0.03em; opacity:0.9;"></div>
 
@@ -1606,7 +1711,8 @@ function renderHtml(dataset) {
 
       <div class="chart-card live-col-radar">
         <h2 style="margin:0 0 2px;">健康雷達 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">5個軸分別是：抱怨/bug、功能請求、純稱讚、一般（依評論意圖分類佔比換算，總和100%）；版本穩定度＝沒有發生評分驟降的版本佔全部版本的比例。範圍越靠外圍越好，但「抱怨/bug」軸例外——越靠外圍代表抱怨佔比越高，越差。點擊任一軸可查看該類別的實際評論。</div></span></h2>
-        <div class="chart-container" style="max-width:520px; margin:0 auto; height:400px;">
+        <div class="chart-container radar-scan-wrap" style="max-width:520px; margin:0 auto; height:400px; position:relative;">
+          <div class="radar-sweep"></div>
           <canvas id="healthRadarChart"></canvas>
         </div>
       </div>
@@ -2233,7 +2339,7 @@ function renderHtml(dataset) {
       const healthPct = avg !== null ? (avg / 5 * 100).toFixed(1) : '—';
       const total = dataset.allReviewsFlat.length;
       document.getElementById('hudStrip').textContent =
-        'SYS_HEALTH: ' + healthPct + '%　TOTAL_REVIEWS: ' + total.toLocaleString('en-US');
+        '系統健康度: ' + healthPct + '%　總評論數: ' + total.toLocaleString('en-US');
     })();
 
     const summaryEl = document.getElementById('summaryCards');
@@ -2309,13 +2415,15 @@ function renderHtml(dataset) {
             backgroundColor: 'rgba(' + glowRgb + ', 0.15)',
             pointBackgroundColor: 'rgb(' + glowRgb + ')',
             pointBorderColor: '#0f1115',
-            pointHoverRadius: 6,
+            pointRadius: 6,
+            pointHoverRadius: 9,
             borderWidth: 2,
           }],
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          animation: { duration: 1400, easing: 'easeOutQuart' },
           scales: {
             r: {
               min: 0, max: 100,
@@ -2400,7 +2508,7 @@ function renderHtml(dataset) {
 
       container.innerHTML = top.map((item, i) => {
         const severity = i < 3 ? 'critical' : 'warn';
-        return '<div class="anomaly-row">' +
+        return '<div class="anomaly-row" style="animation-delay:' + (i * 60) + 'ms">' +
           '<span class="anomaly-severity ' + severity + '"></span>' +
           '<span class="anomaly-tag-type">' + item.typeShort + '</span>' +
           '<span class="anomaly-label">' + item.label + '</span>' +
