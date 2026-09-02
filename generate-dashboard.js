@@ -649,34 +649,43 @@ function buildDataset(dailyRuns, fullHistory, manualReviews) {
     '不能', '不是', '就是', '還有', '而已', '結果', '然後', '如果', '雖然', '雖說',
   ]);
 
-  function extractWordFrequency(reviews) {
+  function extractWordFrequency(reviews, ngramSizes) {
+    const sizes = ngramSizes || [2];
     const freq = new Map();
     reviews.forEach((r) => {
       const text = r.text || '';
       const segments = text.match(/[\u4e00-\u9fa5]+/g) || [];
+      // 用 Set 讓同一則評論裡重複出現的詞只算一次——
+      // 這樣「詞出現的則數」才會跟點擊後看到的實際評論筆數一致，不會對不起來。
+      const seenInThisReview = new Set();
       segments.forEach((seg) => {
-        for (let i = 0; i < seg.length - 1; i++) {
-          const bigram = seg.slice(i, i + 2);
-          if (PHRASE_STOPWORDS.has(bigram)) continue;
-          if (SINGLE_CHAR_STOPWORDS.has(bigram[0]) || SINGLE_CHAR_STOPWORDS.has(bigram[1])) continue;
-          freq.set(bigram, (freq.get(bigram) || 0) + 1);
-        }
+        sizes.forEach((n) => {
+          for (let i = 0; i <= seg.length - n; i++) {
+            const gram = seg.slice(i, i + n);
+            if (PHRASE_STOPWORDS.has(gram)) continue;
+            if (SINGLE_CHAR_STOPWORDS.has(gram[0]) || SINGLE_CHAR_STOPWORDS.has(gram[gram.length - 1])) continue;
+            seenInThisReview.add(gram);
+          }
+        });
+      });
+      seenInThisReview.forEach((gram) => {
+        freq.set(gram, (freq.get(gram) || 0) + 1);
       });
     });
     return Array.from(freq.entries())
       .map(([word, count]) => ({ word, count }))
-      .filter((w) => w.count >= 2) // 只出現 1 次的字詞雜訊太多，過濾掉
+      .filter((w) => w.count >= 2) // 只出現在 1 則評論的詞雜訊太多，過濾掉
       .sort((a, b) => b.count - a.count)
       .slice(0, 20);
   }
   const wordFrequency = extractWordFrequency(allReviewsFlatWithManual);
 
-  // ===== 近期熱門負評關鍵字（LIVE MONITOR 用）：近半年（6個月）的負評，套用同一套雙字詞邏輯 =====
-  const recentMonthsForKeywords = recentMonths6;
+  // ===== 近期熱門負評關鍵字（LIVE MONITOR 用）：近一年（12個月）的負評，雙字詞+三字詞一起抓 =====
+  const recentMonthsForKeywords = lastNCalendarMonths(12);
   const recentNegativeReviews = allReviewsFlatWithManual.filter(
     (r) => r.sentiment === 'negative' && recentMonthsForKeywords.includes(r.month)
   );
-  const recentNegativeWordFrequency = extractWordFrequency(recentNegativeReviews).slice(0, 15);
+  const recentNegativeWordFrequency = extractWordFrequency(recentNegativeReviews, [2, 3]).slice(0, 15);
 
   const otherCount = allReviewsFlatWithManual.filter((r) => r.categories.includes(OTHER_CATEGORY)).length;
 
@@ -729,6 +738,7 @@ function buildDataset(dailyRuns, fullHistory, manualReviews) {
     recentMonths6,
     wordFrequency,
     recentNegativeWordFrequency,
+    recentMonthsForKeywords,
     journeyPainPoints: computeJourneyPainPoints(allReviewsFlatWithManual),
   };
 }
@@ -780,13 +790,16 @@ function renderHtml(dataset) {
   @keyframes pillPulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.55; } }
   .status-pill.status-critical::before{ animation: pillPulse 1.3s ease-in-out infinite; }
   .info-hint{
-    display:inline-flex; align-items:center; justify-content:center;
-    width:15px; height:15px; border-radius:50%;
-    border:1px solid var(--muted); color:var(--muted);
-    font-size:10px; cursor:pointer; flex-shrink:0; position:relative;
-    font-family: -apple-system, "PingFang TC", sans-serif;
+    display:inline-block;
+    color:var(--muted);
+    font-size:0.78em;
+    cursor:pointer;
+    position:relative;
+    vertical-align:middle;
+    line-height:1;
+    margin-left:1px;
   }
-  .info-hint:hover, .info-hint.open{ color:rgb(var(--hud-glow)); border-color:rgb(var(--hud-glow)); }
+  .info-hint:hover, .info-hint.open{ color:rgb(var(--hud-glow)); }
   .info-hint-pop{
     display:none; position:absolute; z-index:40; top:22px; left:50%; transform:translateX(-50%);
     width:260px; background:#11151d; border:1px solid rgba(var(--hud-glow),0.35);
@@ -1070,24 +1083,6 @@ function renderHtml(dataset) {
   .anomaly-count{ color:var(--muted); font-size:11px; flex-shrink:0; }
 
   .radar-scan-wrap{ overflow: hidden; border-radius: 8px; position: relative; }
-  .radar-sweep{
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 260%;
-    height: 260%;
-    z-index: 2;
-    pointer-events: none;
-    border-radius: 50%;
-    background: conic-gradient(from 0deg, rgba(var(--hud-glow), 0.28), transparent 30%, transparent 100%);
-    mix-blend-mode: screen;
-    transform: translate(-50%, -50%) rotate(0deg);
-    animation: radarSweepSpin 4s linear infinite;
-  }
-  @keyframes radarSweepSpin {
-    from { transform: translate(-50%, -50%) rotate(0deg); }
-    to   { transform: translate(-50%, -50%) rotate(360deg); }
-  }
 
   @keyframes anomalyRowIn {
     from { opacity: 0; transform: translateX(8px); }
@@ -1096,19 +1091,6 @@ function renderHtml(dataset) {
   .anomaly-row{ animation: anomalyRowIn 0.35s ease-out both; }
 
   .anomaly-divider{ border-top:1px solid var(--border); margin:16px 0 14px; }
-  .keyword-cloud{ display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; }
-  .keyword-chip{
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    padding: 3px 11px;
-    border-radius: 14px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    color: var(--text);
-    cursor: pointer;
-    line-height: 1.6;
-    transition: border-color .15s, color .15s;
-  }
-  .keyword-chip:hover{ border-color: rgb(var(--hud-glow)); color: rgb(var(--hud-glow)); }
 
   .live-grid{
     display:grid;
@@ -1139,15 +1121,27 @@ function renderHtml(dataset) {
     display:grid; grid-template-columns: 1fr 1fr; gap:14px;
   }
   .live-col-kpi .card:nth-child(3){ grid-column: 1 / -1; }
-  .live-col-radar, .live-col-anomaly{ margin-bottom:0; }
+  .live-col-anomaly{ margin-bottom:0; }
   .chart-card.live-col-radar{
+    padding-top: 0;
     padding-left: 0;
     padding-right: 0;
     padding-bottom: 0;
     overflow: hidden;
   }
   .live-col-radar .radar-scan-wrap{
-    border-radius: 0 0 12px 12px;
+    border-radius: 12px;
+  }
+  .live-col-radar h2{
+    position: absolute;
+    top: 14px;
+    left: 0;
+    right: 0;
+    z-index: 3;
+    pointer-events: none;
+  }
+  .live-col-radar h2 .info-hint{
+    pointer-events: auto;
   }
 
   .chart-card {
@@ -1761,17 +1755,26 @@ function renderHtml(dataset) {
         <div class="chart-card" style="margin-top:20px;">
           <h2 style="margin:0 0 2px;">平台佔比</h2>
           <div class="note" style="margin:2px 0 8px;">Android／iOS 評論數量佔比</div>
-          <div class="chart-container" style="max-width:220px; margin:0 auto; height:200px;">
+          <div class="chart-container" style="max-width:260px; margin:0 auto; height:220px;">
             <canvas id="platformRatioChart"></canvas>
           </div>
         </div>
       </div>
 
-      <div class="chart-card live-col-radar">
-        <h2 style="margin:0 0 2px; padding:0 20px;">健康雷達 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">5個軸分別是：抱怨/bug、功能請求、純稱讚、一般（依評論意圖分類佔比換算，總和100%）；版本穩定度＝沒有發生評分驟降的版本佔全部版本的比例。範圍越靠外圍越好，但「抱怨/bug」軸例外——越靠外圍代表抱怨佔比越高，越差。實線（本期）＝依資料日期範圍中點切分後較新的一半，虛線（上期）＝較舊的一半，供對照趨勢。點擊「本期」的軸可查看該類別的實際評論。</div></span></h2>
-        <div class="chart-container radar-scan-wrap" style="height:400px; position:relative;">
-          <div class="radar-sweep"></div>
-          <canvas id="healthRadarChart"></canvas>
+      <div class="live-col-2">
+        <div class="chart-card live-col-radar">
+          <h2 style="margin:0; padding:0 20px;">健康雷達 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">5個軸分別是：抱怨/bug、功能請求、純稱讚、一般（依評論意圖分類佔比換算，總和100%）；版本穩定度＝沒有發生評分驟降的版本佔全部版本的比例。範圍越靠外圍越好，但「抱怨/bug」軸例外——越靠外圍代表抱怨佔比越高，越差。實線（本期）＝依資料日期範圍中點切分後較新的一半，虛線（上期）＝較舊的一半，供對照趨勢。點擊「本期」的軸可查看該類別的實際評論。</div></span></h2>
+          <div class="chart-container radar-scan-wrap" style="height:440px; position:relative;">
+            <canvas id="healthRadarChart"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-card" id="keywordChartCard" style="display:flex; flex-direction:column;">
+          <h2 style="margin:0 0 2px;">近期熱門負評關鍵字 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">取最近一年（12個月）的負評，用「雙字詞＋三字詞」統計常見詞彙（跟評論tab的字詞頻率排行同一套邏輯）。點擊長條可查看包含該詞的負評。</div></span></h2>
+          <div class="note" style="margin:2px 0 10px;">最近一年負評，依出現則數排序（前5名）</div>
+          <div class="chart-container" style="flex:1; min-height:80px;">
+            <canvas id="recentKeywordChart"></canvas>
+          </div>
         </div>
       </div>
 
@@ -1780,12 +1783,6 @@ function renderHtml(dataset) {
           <h2 style="margin:0 0 2px;">系統異常與熱門痛點 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">合併三個來源依「負評則數」排序：版本異常（評分驟降的版本）、熱門痛點（評論分類）、旅程痛點（服務藍圖分類）。前3名標記為CRITICAL，其餘為WARN。點擊可查看該項目的實際負評。</div></span></h2>
           <div class="note" style="margin:2px 0 10px;">依負評則數排序，點擊可查看實際評論</div>
           <div id="anomalyList" class="mono"></div>
-        </div>
-
-        <div class="chart-card">
-          <h2 style="margin:0 0 2px;">近期熱門負評關鍵字 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">取最近半年（6個月）的負評，用「雙字詞」統計常見詞彙（跟評論tab的字詞頻率排行同一套邏輯），字越大代表出現次數越多。點擊可查看包含該詞的負評。</div></span></h2>
-          <div class="note" style="margin:2px 0 10px;">最近半年負評，字越大出現越頻繁</div>
-          <div id="keywordCloud" class="keyword-cloud"></div>
         </div>
       </div>
     </div>
@@ -2257,7 +2254,10 @@ function renderHtml(dataset) {
 
       // 相容舊資料：改版前「整合式旅程痛點」曾經是DEEP INSIGHTS底下的一個子分頁，
       // 如果瀏覽器還記得那筆舊的偏好，直接導向新的JOURNEY BLUEPRINT分組。
-      if (savedTab === 'journeypain') {
+      // 注意：只有在「完全沒有GROUP_STORAGE_KEY紀錄」時才套用這個相容邏輯——
+      // 不然只要瀏覽器裡還留著舊的 gosmart-active-tab='journeypain'（用過舊版介面時存下的），
+      // 之後就算已經正常切換分組，也會每次重整頁面都被這條規則強制拉回服務藍圖。
+      if (!savedGroup && savedTab === 'journeypain') {
         savedGroup = 'journey';
         savedTab = null;
       }
@@ -2398,14 +2398,11 @@ function renderHtml(dataset) {
         ? '　｜ 首次產出，尚無比對基準'
         : '　｜ 與上次產出相比新增 ' + dataset.newReviewsCount.total + ' 則評論');
 
-    // ===== 頂部HUD數據列：整體健康度、總評論數（純前端從allReviewsFlat即時算出，Node端不用另外加欄位） =====
+    // ===== 頂部HUD數據列：總評論數（純前端從allReviewsFlat即時算出，Node端不用另外加欄位） =====
     (function renderHudStrip() {
-      const scored = dataset.allReviewsFlat.filter(r => typeof r.score === 'number');
-      const avg = scored.length ? scored.reduce((s, r) => s + r.score, 0) / scored.length : null;
-      const healthPct = avg !== null ? (avg / 5 * 100).toFixed(1) : '—';
       const total = dataset.allReviewsFlat.length;
       document.getElementById('hudStrip').textContent =
-        '系統健康度: ' + healthPct + '%　總評論數: ' + total.toLocaleString('en-US');
+        '總評論數: ' + total.toLocaleString('en-US');
     })();
 
     const summaryEl = document.getElementById('summaryCards');
@@ -2503,7 +2500,43 @@ function renderHtml(dataset) {
       // 這裡先用 getComputedStyle 把主色的實際RGB值讀出來，再組成 canvas 看得懂的字串。
       const glowRgb = getComputedStyle(document.documentElement).getPropertyValue('--hud-glow').trim() || '198, 242, 78';
 
-      new Chart(canvas, {
+      // ===== 掃描光效果：直接畫在雷達圖的canvas上，不再用另一個DOM元素疊圖去猜位置 =====
+      // 這樣掃描光跟雷達圖本身用的是同一套座標系統（Chart.js的 scales.r.xCenter/yCenter/drawingArea），
+      // 不會再有「DOM覆蓋層」跟「canvas內部實際幾何」對不齊的問題。
+      let sweepAngle = 0;
+      const radarSweepPlugin = {
+        id: 'radarSweepPlugin',
+        beforeDatasetsDraw(chart) {
+          const rScale = chart.scales && chart.scales.r;
+          if (!rScale || typeof rScale.xCenter !== 'number') return;
+          if (typeof chart.ctx.createConicGradient !== 'function') return; // 舊瀏覽器沒有這個API就跳過裝飾效果，不影響圖表本身
+
+          const { ctx } = chart;
+          const { xCenter, yCenter } = rScale;
+
+          // 半徑改成動態算：用「圓心到畫布最遠角落」的距離，
+          // 這樣不管卡片實際多寬多高，掃描光轉一圈都能覆蓋到整個區塊，不會只在中間畫一個小圓。
+          const cw = chart.width || 0;
+          const ch = chart.height || 0;
+          const dx = Math.max(xCenter, cw - xCenter);
+          const dy = Math.max(yCenter, ch - yCenter);
+          const radius = Math.sqrt(dx * dx + dy * dy);
+
+          ctx.save();
+          const gradient = ctx.createConicGradient(sweepAngle, xCenter, yCenter);
+          gradient.addColorStop(0, 'rgba(' + glowRgb + ', 0.35)');
+          gradient.addColorStop(0.16, 'rgba(' + glowRgb + ', 0)');
+          gradient.addColorStop(1, 'rgba(' + glowRgb + ', 0)');
+          ctx.beginPath();
+          ctx.arc(xCenter, yCenter, radius, 0, Math.PI * 2);
+          ctx.fillStyle = gradient;
+          ctx.globalCompositeOperation = 'screen';
+          ctx.fill();
+          ctx.restore();
+        },
+      };
+
+      const radarChartInstance = new Chart(canvas, {
         type: 'radar',
         data: {
           labels,
@@ -2533,6 +2566,7 @@ function renderHtml(dataset) {
             },
           ],
         },
+        plugins: [radarSweepPlugin],
         options: {
           responsive: true,
           maintainAspectRatio: false,
@@ -2576,6 +2610,27 @@ function renderHtml(dataset) {
           },
         },
       });
+
+      // ===== 用 requestAnimationFrame 持續轉動掃描光角度、重繪canvas =====
+      // 因為掃描光現在是plugin直接畫在雷達圖的canvas上（不是另一個DOM元素疊上去），
+      // 要讓它「動起來」，就需要持續呼叫 chart.draw() 重繪；對這種單一雷達圖來說，
+      // 重繪成本很低，不會造成效能問題。分頁切到背景時暫停，切回來再繼續，省資源。
+      let sweepRafId = null;
+      function tickSweep() {
+        sweepAngle += 0.025;
+        if (sweepAngle > Math.PI * 2) sweepAngle -= Math.PI * 2;
+        radarChartInstance.draw();
+        sweepRafId = requestAnimationFrame(tickSweep);
+      }
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          if (sweepRafId) cancelAnimationFrame(sweepRafId);
+          sweepRafId = null;
+        } else if (!sweepRafId) {
+          sweepRafId = requestAnimationFrame(tickSweep);
+        }
+      });
+      sweepRafId = requestAnimationFrame(tickSweep);
     })();
 
     // ===== LIVE MONITOR：平台佔比小圖表（補左欄高度，同時是有用的資訊） =====
@@ -2585,6 +2640,61 @@ function renderHtml(dataset) {
 
       const androidCount = (dataset.allReviewsFlat || []).filter(r => r.platform === 'android').length;
       const iosCount = (dataset.allReviewsFlat || []).filter(r => r.platform === 'ios').length;
+
+      // 自訂plugin：在圖上對應的區塊拉出一條線＋百分比標註（不是疊在圖例文字裡）
+      const pullOutLabelPlugin = {
+        id: 'pullOutLabelPlugin',
+        afterDraw(chart) {
+          try {
+            const { ctx } = chart;
+            const meta = chart.getDatasetMeta(0);
+            if (!meta || !meta.data || !meta.data.length) return;
+            const values = chart.data.datasets[0].data;
+            const total = values.reduce((s, v) => s + v, 0) || 1;
+
+            meta.data.forEach((arc, i) => {
+              if (!values[i]) return; // 數值為0的區塊不畫標註，避免線條疊在圓心
+
+              // 直接用ArcElement本身的x/y/outerRadius屬性（比呼叫getCenterPoint()更直接可靠）
+              const cx = arc.x;
+              const cy = arc.y;
+              const r = arc.outerRadius;
+              if (typeof cx !== 'number' || typeof cy !== 'number' || typeof r !== 'number') return;
+
+              const angle = (arc.startAngle + arc.endAngle) / 2;
+              const cos = Math.cos(angle);
+              const sin = Math.sin(angle);
+              const isRight = cos >= 0;
+
+              const p1 = { x: cx + cos * r, y: cy + sin * r };
+              const p2 = { x: cx + cos * (r + 10), y: cy + sin * (r + 10) };
+              const p3 = { x: p2.x + (isRight ? 14 : -14), y: p2.y };
+
+              const pct = Math.round(values[i] / total * 100);
+
+              ctx.save();
+              ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(p1.x, p1.y);
+              ctx.lineTo(p2.x, p2.y);
+              ctx.lineTo(p3.x, p3.y);
+              ctx.stroke();
+
+              // 字體用保證存在的通用字體，不依賴網頁字體（JetBrains Mono）是否已經載入完成，
+              // 避免字體還沒就緒時canvas文字畫不出來的問題。
+              ctx.fillStyle = '#ffffff';
+              ctx.font = 'bold 12px sans-serif';
+              ctx.textAlign = isRight ? 'left' : 'right';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(pct + '%', p3.x + (isRight ? 4 : -4), p3.y);
+              ctx.restore();
+            });
+          } catch (err) {
+            console.error('平台佔比拉出標註繪製失敗：', err);
+          }
+        },
+      };
 
       new Chart(canvas, {
         type: 'doughnut',
@@ -2597,10 +2707,12 @@ function renderHtml(dataset) {
             borderWidth: 2,
           }],
         },
+        plugins: [pullOutLabelPlugin],
         options: {
           responsive: true,
           maintainAspectRatio: false,
           cutout: '65%',
+          layout: { padding: { top: 18, bottom: 18, left: 40, right: 40 } },
           animation: { duration: 900, easing: 'easeOutQuart' },
           plugins: {
             legend: {
@@ -2669,7 +2781,7 @@ function renderHtml(dataset) {
       });
 
       items.sort((a, b) => b.count - a.count);
-      const top = items.slice(0, 12);
+      const top = items.slice(0, 20);
 
       container.innerHTML = top.map((item, i) => {
         const severity = i < 3 ? 'critical' : 'warn';
@@ -2686,40 +2798,66 @@ function renderHtml(dataset) {
       });
     })();
 
-    // ===== LIVE MONITOR：近期熱門負評關鍵字標籤雲 =====
-    (function renderKeywordCloud() {
-      const container = document.getElementById('keywordCloud');
-      if (!container) return;
+    // ===== LIVE MONITOR：近期熱門負評關鍵字（改用長條圖，取代原本的文字雲呈現） =====
+    (function renderRecentKeywordChart() {
+      const canvas = document.getElementById('recentKeywordChart');
+      if (!canvas || !window.Chart) return;
 
       const words = dataset.recentNegativeWordFrequency || [];
       if (!words.length) {
-        container.innerHTML = '<div class="note">最近半年沒有足夠的負評關鍵字資料</div>';
+        canvas.parentElement.innerHTML = '<div class="note">最近一年沒有足夠的負評關鍵字資料</div>';
         return;
       }
 
-      const maxCount = Math.max(...words.map(w => w.count));
-      const minCount = Math.min(...words.map(w => w.count));
-      const range = maxCount - minCount || 1;
+      const glowRgb = getComputedStyle(document.documentElement).getPropertyValue('--hud-glow').trim() || '198, 242, 78';
+      const shown = words.slice(0, 5); // 移到雷達圖下方後空間變小，改取前5個
 
-      container.innerHTML = words.map((w) => {
-        const t = (w.count - minCount) / range; // 0~1
-        const fontSize = Math.round(12 + t * 12); // 12px ~ 24px
-        return '<span class="keyword-chip" data-word="' + w.word + '" style="font-size:' + fontSize + 'px;">' + w.word + '（' + w.count + '）</span>';
-      }).join('');
-
-      container.querySelectorAll('.keyword-chip').forEach((el) => {
-        el.addEventListener('click', () => {
-          const word = el.dataset.word;
-          const matched = dataset.allReviewsFlat.filter(r => r.sentiment === 'negative' && (r.text || '').includes(word));
-          openReviewDrawer('「' + word + '」相關負評', '共 ' + matched.length + ' 則', matched);
-        });
+      new Chart(canvas, {
+        type: 'bar',
+        data: {
+          labels: shown.map(w => w.word),
+          datasets: [{
+            data: shown.map(w => w.count),
+            backgroundColor: 'rgba(' + glowRgb + ', 0.75)',
+            borderRadius: 4,
+          }],
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 700, easing: 'easeOutQuart' },
+          scales: {
+            x: { ticks: { color: '#9aa0ac', stepSize: 1 }, grid: { color: 'rgba(255,255,255,0.06)' } },
+            y: { ticks: { color: '#e8e9ed', autoSkip: false, font: { family: 'JetBrains Mono, monospace' } }, grid: { display: false } },
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => '共 ' + ctx.raw + ' 則負評（點擊查看）',
+              },
+            },
+          },
+          onClick: (evt, elements) => {
+            if (!elements.length) return;
+            const word = shown[elements[0].index].word;
+            const months = dataset.recentMonthsForKeywords || [];
+            // 篩選條件要跟長條圖數字時完全一樣（近半年＋負評），數字才會對得起來，
+            // 不能只篩負評卻不限時間範圍，不然點進去看到的則數一定比長條圖上的數字多。
+            const matched = dataset.allReviewsFlat.filter(r =>
+              r.sentiment === 'negative' && months.includes(r.month) && (r.text || '').includes(word)
+            );
+            openReviewDrawer('「' + word + '」相關負評', '共 ' + matched.length + ' 則', matched);
+          },
+        },
       });
     })();
 
-    // ===== LIVE MONITOR：讓右欄（異常清單＋關鍵字雲）的底部，精準對齊左欄（KPI＋平台佔比）的底部 =====
+    // ===== LIVE MONITOR：讓右欄（系統異常清單）的底部，精準對齊左欄（KPI＋平台佔比）的底部 =====
     // 不依賴CSS Grid的align-items:stretch（不同瀏覽器對「grid item裡面還是flex容器」這種巢狀情境
     // 的處理不一致，實測發現不可靠），改用JS直接量兩欄實際的像素高度，強制設定右欄容器高度，
-    // 讓內部的flex:1（異常清單）去吸收多出來的空間，關鍵字雲的底部自然就會對齊左欄底部。
+    // 讓內部的flex:1（異常清單）去吸收多出來的空間，異常清單的底部自然就會對齊左欄底部。
     function syncLiveColumnHeights() {
       const col1 = document.querySelector('.live-col-1');
       const col3 = document.querySelector('.live-col-3');
@@ -2742,9 +2880,44 @@ function renderHtml(dataset) {
       }
     }
 
+    // ===== LIVE MONITOR：讓「近期熱門負評關鍵字」卡片的底部，對齊左欄（KPI＋平台佔比）的底部 =====
+    // 健康雷達卡片高度是固定的，「近期熱門負評關鍵字」疊在它下面，
+    // 所以是靠壓縮/放寬「近期熱門負評關鍵字」這張卡片本身的高度，讓它跟左欄底部對齊，
+    // 不是動整欄（live-col-2）的高度——雷達圖不該因為這個對齊需求被連帶壓縮或拉長。
+    function syncKeywordCardHeight() {
+      const col1 = document.querySelector('.live-col-1');
+      const card = document.getElementById('keywordChartCard');
+      if (!col1 || !card) return;
+
+      if (window.innerWidth <= 1100) {
+        card.style.height = '';
+        return;
+      }
+
+      card.style.height = ''; // 先清掉，重新量一次原始高度，避免疊加誤差
+      const col1Rect = col1.getBoundingClientRect();
+      const cardRect = card.getBoundingClientRect();
+      const targetHeight = col1Rect.bottom - cardRect.top;
+      const minHeight = 130; // 保留最基本的可讀高度，避免資料一多、算出來的高度被壓成看不出內容
+
+      if (targetHeight > 0) {
+        card.style.height = Math.max(targetHeight, minHeight) + 'px';
+        if (window.Chart) {
+          const chartInstance = Chart.getChart('recentKeywordChart');
+          if (chartInstance) chartInstance.resize();
+        }
+      }
+    }
+
     // 用 requestAnimationFrame 確保在圖表都畫完、實際版面穩定後才量測
-    requestAnimationFrame(() => requestAnimationFrame(syncLiveColumnHeights));
-    window.addEventListener('resize', syncLiveColumnHeights);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      syncLiveColumnHeights();
+      syncKeywordCardHeight();
+    }));
+    window.addEventListener('resize', () => {
+      syncLiveColumnHeights();
+      syncKeywordCardHeight();
+    });
 
 
     const cardClickMap = {
