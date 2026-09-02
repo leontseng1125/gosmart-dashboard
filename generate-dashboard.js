@@ -6,6 +6,122 @@ const OUT_FILE = path.join(__dirname, 'dashboard.html');
 const FULL_HISTORY_FILE = path.join(DATA_DIR, 'android-full-history.json');
 const MANUAL_REVIEWS_FILE = path.join(DATA_DIR, 'manual-coded-reviews.json');
 
+// ===== 資料來源開關 =====
+// true：以手動匯出的CSV（Google Play Console / App Store Connect 的評論匯出檔）為主要資料來源。
+// false：改回原本的爬蟲資料（reviews-*.json + android-full-history.json）。
+// 目前先固定用CSV，因為比對過後發現爬蟲資料還有些地方需要校正；
+// 爬蟲相關的程式碼完全沒有刪除，之後校正好想切回來，把這裡改成 false 就可以了。
+const USE_CSV_AS_PRIMARY_SOURCE = true;
+const ANDROID_CSV_FILE = path.join(DATA_DIR, 'android-reviews.csv');
+const IOS_CSV_FILE = path.join(DATA_DIR, 'ios-reviews.csv');
+
+// ===== CSV 解析（自己寫，不依賴額外套件，Node環境不用另外npm install） =====
+// 處理RFC4180格式：欄位可以用雙引號包起來，裡面可以有逗號、換行、用""表示的逸出雙引號。
+function parseCsv(content) {
+  if (content.charCodeAt(0) === 0xfeff) content = content.slice(1); // 去掉檔案開頭可能的BOM
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < content.length; i++) {
+    const c = content[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (content[i + 1] === '"') { field += '"'; i++; } else { inQuotes = false; }
+      } else {
+        field += c;
+      }
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ',') {
+      row.push(field); field = '';
+    } else if (c === '\r') {
+      // 忽略，統一靠 \n 判斷換行，避免 CRLF/LF 混用時多算一行
+    } else if (c === '\n') {
+      row.push(field); field = '';
+      rows.push(row); row = [];
+    } else {
+      field += c;
+    }
+  }
+  if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+  return rows.filter((r) => !(r.length === 1 && r[0].trim() === '')); // 濾掉檔案結尾的空白行
+}
+
+function csvRowsToObjects(rows) {
+  if (rows.length === 0) return [];
+  const header = rows[0].map((h) => h.trim());
+  return rows.slice(1).map((r) => {
+    const obj = {};
+    header.forEach((h, i) => { obj[h] = r[i] !== undefined ? r[i] : ''; });
+    return obj;
+  });
+}
+
+// 解析「2026年9月1日 15:43」或「2026年7月31日」這種中文日期格式（時間部分可有可無）
+function parseChineseDateTime(str) {
+  if (!str) return null;
+  const m = String(str).trim().match(/^(\d{4})年(\d{1,2})月(\d{1,2})日(?:\s+(\d{1,2}):(\d{2}))?/);
+  if (!m) return null;
+  const [, y, mo, d, h, mi] = m;
+  return new Date(Number(y), Number(mo) - 1, Number(d), h ? Number(h) : 0, mi ? Number(mi) : 0);
+}
+
+function loadCsvReviews() {
+  const result = { android: [], ios: [] };
+
+  if (fs.existsSync(ANDROID_CSV_FILE)) {
+    const rows = csvRowsToObjects(parseCsv(fs.readFileSync(ANDROID_CSV_FILE, 'utf-8')));
+    result.android = rows
+      .map((row) => {
+        const realDate = parseChineseDateTime(row['評論時間']);
+        const versionRaw = (row['應用程式版本名稱'] || '').trim();
+        const version = versionRaw && versionRaw !== '-' ? versionRaw : null;
+        const text = row['評論內容'] || '';
+        const userName = row['評論人'] || '';
+        // 這份匯出檔沒有唯一ID欄位，用「使用者+評論時間+內容前50字」組一個穩定的識別碼，
+        // 只要原始資料沒變，重新產生報表時算出來的id會一樣，不會被誤判成「新評論」而重複計算。
+        const id = 'csv-android-' + userName + '|' + (row['評論時間'] || '') + '|' + text.slice(0, 50);
+        return {
+          id,
+          date: realDate ? realDate.toISOString().slice(0, 10) : null,
+          score: row['星等'],
+          text,
+          version,
+          userName,
+        };
+      })
+      .filter((r) => r.date); // 日期解析失敗的直接跳過，避免髒資料混進報表
+  }
+
+  if (fs.existsSync(IOS_CSV_FILE)) {
+    const rows = csvRowsToObjects(parseCsv(fs.readFileSync(IOS_CSV_FILE, 'utf-8')));
+    result.ios = rows
+      .map((row) => {
+        const realDate = parseChineseDateTime(row['評論時間']);
+        // 「4.13.0 - 台灣」這種格式，只取版本號部分
+        const versionRaw = (row['版本'] || '').split(' - ')[0].trim();
+        const version = versionRaw || null;
+        const body = row['評論內容'] || '';
+        const userName = row['評論人'] || '';
+        // 轉成 YYYY/MM/DD，剛好對應到 parseIosDate() 原本就有支援的格式，不用另外改那個函式
+        const isoLikeDate = realDate
+          ? realDate.getFullYear() + '/' + String(realDate.getMonth() + 1).padStart(2, '0') + '/' + String(realDate.getDate()).padStart(2, '0')
+          : null;
+        return {
+          date: isoLikeDate,
+          rating: row['星等'],
+          body,
+          userName,
+          version,
+        };
+      })
+      .filter((r) => r.date);
+  }
+
+  return result;
+}
+
 function loadManualReviews() {
   if (!fs.existsSync(MANUAL_REVIEWS_FILE)) return [];
   const raw = JSON.parse(fs.readFileSync(MANUAL_REVIEWS_FILE, 'utf-8'));
@@ -354,7 +470,7 @@ function buildDataset(dailyRuns, fullHistory, manualReviews) {
           text,
           title: r.title || null,
           userName: r.userName || null,
-          version: platform === 'android' ? (r.version || null) : null, // iOS 抓取時未取得版本號
+          version: r.version || null, // CSV匯出檔iOS也有版本欄位了（原本爬蟲抓不到才寫死null）
           sentiment: sentimentFromScore(r.score),
           categories,
           stages: [...new Set(categories.map(categoryToStage))],
@@ -751,7 +867,7 @@ function renderHtml(dataset) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>阿葛格 評論追蹤 Dashboard</title>
+<title>阿葛格 評論追蹤小王子</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -1100,6 +1216,8 @@ function renderHtml(dataset) {
   }
   @media (max-width:1100px){
     .live-grid{ grid-template-columns: 1fr; }
+    #keywordChartCard{ display:block; }
+    #keywordChartCard .chart-container{ flex:none; height:220px; }
   }
   .live-col-3{
     display:flex;
@@ -1538,6 +1656,7 @@ function renderHtml(dataset) {
   .drawer-body {
     flex: 1;
     overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 8px 20px 20px;
   }
   .drawer-review-item {
@@ -1728,7 +1847,7 @@ function renderHtml(dataset) {
     <div class="drawer-body" id="drawerBody"></div>
   </div>
 
-  <h1>阿葛格 評論追蹤 Dashboard</h1>
+  <h1>阿葛格 評論追蹤小王子</h1>
   <div class="subtitle" id="subtitle"></div>
   <div class="mono" id="hudStrip" style="font-size:11px; color:rgb(var(--hud-glow)); margin:-4px 0 20px; letter-spacing:0.03em; opacity:0.9;"></div>
 
@@ -2352,6 +2471,26 @@ function renderHtml(dataset) {
       '</div>';
     }
 
+    let lockedScrollY = 0;
+
+    function lockBodyScroll() {
+      lockedScrollY = window.scrollY || window.pageYOffset || 0;
+      document.body.style.position = 'fixed';
+      document.body.style.top = -lockedScrollY + 'px';
+      document.body.style.left = '0';
+      document.body.style.right = '0';
+      document.body.style.width = '100%';
+    }
+
+    function unlockBodyScroll() {
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.left = '';
+      document.body.style.right = '';
+      document.body.style.width = '';
+      window.scrollTo(0, lockedScrollY);
+    }
+
     function openReviewDrawer(title, subtitle, reviews) {
       drawerTitle.textContent = title;
       drawerSubtitle.textContent = subtitle;
@@ -2363,11 +2502,13 @@ function renderHtml(dataset) {
       }
       drawerOverlay.classList.add('open');
       reviewDrawer.classList.add('open');
+      lockBodyScroll(); // 抽屜打開時鎖住背景頁面，滑抽屜內容不會連背景一起動
     }
 
     function closeReviewDrawer() {
       drawerOverlay.classList.remove('open');
       reviewDrawer.classList.remove('open');
+      unlockBodyScroll();
     }
 
     drawerOverlay.addEventListener('click', closeReviewDrawer);
@@ -2390,10 +2531,21 @@ function renderHtml(dataset) {
     let activeStageRange = 'all';
 
 
+    function latestDateForPlatform(platform) {
+      const items = dataset.allReviewsFlat.filter((r) => r.platform === platform);
+      if (!items.length) return null;
+      const maxTs = Math.max(...items.map((r) => r.timestamp));
+      const d = new Date(maxTs);
+      return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+    }
+    const androidLatestDate = latestDateForPlatform('android');
+    const iosLatestDate = latestDateForPlatform('ios');
+
     document.getElementById('subtitle').textContent =
       '資料期間：' + dataset.dateRange.earliest + ' ~ ' + dataset.dateRange.latest +
       '　（產出時間：' + new Date().toLocaleString('zh-TW') + '）' +
-      (dataset.hasFullHistory ? '　｜ 已整合 Android 完整歷史資料' : '') +
+      (androidLatestDate ? '　｜ 更新至Android最新評論 ' + androidLatestDate : '') +
+      (iosLatestDate ? '　｜ 更新至iOS最新評論 ' + iosLatestDate : '') +
       (dataset.newReviewsCount.isFirstRun
         ? '　｜ 首次產出，尚無比對基準'
         : '　｜ 與上次產出相比新增 ' + dataset.newReviewsCount.total + ' 則評論');
@@ -2440,8 +2592,8 @@ function renderHtml(dataset) {
     }
 
     renderCardGroup(summaryEl, [
-      { label: 'Google Play<br>累積評論數', value: dataset.androidTotal, cls: 'android', decimals: 0, clickKey: 'android-total', subLabel: '爬蟲+手動：', subValue: dataset.actualAndroidTotal },
-      { label: 'App Store<br>累積評論數', value: dataset.iosTotal, cls: 'ios-lime', decimals: 0, clickKey: 'ios-total', subLabel: '爬蟲+手動：', subValue: dataset.actualIosTotal },
+      { label: 'Google Play<br>累積評論數', value: dataset.actualAndroidTotal, cls: 'android', decimals: 0, clickKey: 'android-total' },
+      { label: 'App Store<br>累積評論數', value: dataset.actualIosTotal, cls: 'ios-lime', decimals: 0, clickKey: 'ios-total' },
       { label: '今年新增<br>評論數', value: dataset.thisYearTotal, cls: 'android', decimals: 0, clickKey: 'this-year-total', badgeNote: '不分平台' },
       { label: 'Google Play<br>新評論數', value: dataset.newReviewsCount.android, cls: 'new-count', decimals: 0, clickKey: 'android-new' },
       { label: 'App Store<br>新評論數', value: dataset.newReviewsCount.ios, cls: 'new-count', decimals: 0, clickKey: 'ios-new' },
@@ -2696,7 +2848,64 @@ function renderHtml(dataset) {
         },
       };
 
-      new Chart(canvas, {
+      // canvas 的顏色設定不支援 var(--xxx) 語法，這裡先讀出主色的實際RGB值
+      const glowRgb = getComputedStyle(document.documentElement).getPropertyValue('--hud-glow').trim() || '198, 242, 78';
+
+      // ===== 游標追蹤光點 + 同心圓漣漪：直接畫在canvas上，跟雷達圖掃描光同一招 =====
+      let dotAngle = 0;
+      let ripples = []; // 每個元素：{ startTime }（用performance.now()記錄漣漪誕生時間）
+      const RIPPLE_DURATION = 1800; // 一圈漣漪從出生到完全淡出要花多久（毫秒）
+      const RIPPLE_EXPAND = 22; // 漣漪從外緣往外擴散的最大距離（px）
+
+      const ringEffectsPlugin = {
+        id: 'ringEffectsPlugin',
+        afterDraw(chart) {
+          try {
+            const meta = chart.getDatasetMeta(0);
+            if (!meta || !meta.data || !meta.data.length) return;
+            const arc = meta.data[0];
+            if (typeof arc.x !== 'number') return;
+            const { ctx } = chart;
+            const cx = arc.x, cy = arc.y;
+            const innerR = arc.innerRadius;
+            const outerR = arc.outerRadius;
+            const midR = (innerR + outerR) / 2;
+            const now = performance.now();
+
+            // 同心圓漣漪：每圈從圓環外緣往外擴散、邊淡出
+            ripples.forEach((r) => {
+              const age = now - r.startTime;
+              if (age > RIPPLE_DURATION) return;
+              const t = age / RIPPLE_DURATION;
+              const radius = outerR + t * RIPPLE_EXPAND;
+              const alpha = (1 - t) * 0.45;
+              ctx.save();
+              ctx.beginPath();
+              ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+              ctx.strokeStyle = 'rgba(' + glowRgb + ', ' + alpha.toFixed(2) + ')';
+              ctx.lineWidth = 2;
+              ctx.stroke();
+              ctx.restore();
+            });
+
+            // 游標追蹤光點：沿著圓環中線持續繞圈
+            const dotX = cx + Math.cos(dotAngle) * midR;
+            const dotY = cy + Math.sin(dotAngle) * midR;
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(dotX, dotY, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowColor = 'rgb(' + glowRgb + ')';
+            ctx.shadowBlur = 9;
+            ctx.fill();
+            ctx.restore();
+          } catch (err) {
+            console.error('平台佔比動效繪製失敗：', err);
+          }
+        },
+      };
+
+      const platformChartInstance = new Chart(canvas, {
         type: 'doughnut',
         data: {
           labels: ['Android', 'iOS'],
@@ -2707,7 +2916,7 @@ function renderHtml(dataset) {
             borderWidth: 2,
           }],
         },
-        plugins: [pullOutLabelPlugin],
+        plugins: [pullOutLabelPlugin, ringEffectsPlugin],
         options: {
           responsive: true,
           maintainAspectRatio: false,
@@ -2734,6 +2943,30 @@ function renderHtml(dataset) {
           },
         },
       });
+
+      // ===== 動畫迴圈：光點持續繞圈、每隔一段時間產生新的漣漪 =====
+      let ringRafId = null;
+      let lastRippleSpawn = 0;
+      function tickRingEffects(ts) {
+        dotAngle += 0.03;
+        if (dotAngle > Math.PI * 2) dotAngle -= Math.PI * 2;
+        if (!lastRippleSpawn || ts - lastRippleSpawn > 2600) {
+          ripples.push({ startTime: ts });
+          lastRippleSpawn = ts;
+        }
+        ripples = ripples.filter((r) => ts - r.startTime <= RIPPLE_DURATION);
+        platformChartInstance.draw();
+        ringRafId = requestAnimationFrame(tickRingEffects);
+      }
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          if (ringRafId) cancelAnimationFrame(ringRafId);
+          ringRafId = null;
+        } else if (!ringRafId) {
+          ringRafId = requestAnimationFrame(tickRingEffects);
+        }
+      });
+      ringRafId = requestAnimationFrame(tickRingEffects);
     })();
 
     // ===== LIVE MONITOR：整合告警清單（版本異常＋熱門痛點＋旅程痛點，依負評則數排序） =====
@@ -2812,7 +3045,48 @@ function renderHtml(dataset) {
       const glowRgb = getComputedStyle(document.documentElement).getPropertyValue('--hud-glow').trim() || '198, 242, 78';
       const shown = words.slice(0, 5); // 移到雷達圖下方後空間變小，改取前5個
 
-      new Chart(canvas, {
+      // ===== 流光效果：每根長條上疊一道半透明白色高光帶，持續掃過（demo確認過的參數） =====
+      const flowLightPlugin = {
+        id: 'flowLightPlugin',
+        afterDatasetsDraw(chart) {
+          const meta = chart.getDatasetMeta(0);
+          if (!meta || !meta.data) return;
+          const { ctx } = chart;
+          const now = performance.now();
+          const cycle = 2300; // 流光跑一次全長要多久（毫秒）
+
+          meta.data.forEach((bar, i) => {
+            const props = bar.getProps(['x', 'y', 'base', 'height'], true);
+            const left = Math.min(props.x, props.base);
+            const right = Math.max(props.x, props.base);
+            const barLen = right - left;
+            if (barLen <= 0) return;
+
+            // 每根長條的流光稍微錯開時間，看起來比較有層次，不會整排一起閃
+            const offset = (i * 220) % cycle;
+            const progress = ((now + offset) % cycle) / cycle;
+
+            const streakWidth = 92;
+            const streakCenterX = left + progress * (barLen + streakWidth) - streakWidth / 2;
+            const barTop = props.y - props.height / 2;
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(left, barTop, barLen, props.height);
+            ctx.clip();
+
+            const grad = ctx.createLinearGradient(streakCenterX - streakWidth / 2, 0, streakCenterX + streakWidth / 2, 0);
+            grad.addColorStop(0, 'rgba(255,255,255,0)');
+            grad.addColorStop(0.5, 'rgba(255,255,255,0.4)');
+            grad.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(left, barTop, barLen, props.height);
+            ctx.restore();
+          });
+        },
+      };
+
+      const keywordChartInstance = new Chart(canvas, {
         type: 'bar',
         data: {
           labels: shown.map(w => w.word),
@@ -2822,6 +3096,7 @@ function renderHtml(dataset) {
             borderRadius: 4,
           }],
         },
+        plugins: [flowLightPlugin],
         options: {
           indexAxis: 'y',
           responsive: true,
@@ -2852,6 +3127,22 @@ function renderHtml(dataset) {
           },
         },
       });
+
+      // ===== 動畫迴圈：持續重繪讓流光動起來，分頁切到背景時暫停省資源 =====
+      let flowLightRafId = null;
+      function tickFlowLight() {
+        keywordChartInstance.draw();
+        flowLightRafId = requestAnimationFrame(tickFlowLight);
+      }
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          if (flowLightRafId) cancelAnimationFrame(flowLightRafId);
+          flowLightRafId = null;
+        } else if (!flowLightRafId) {
+          flowLightRafId = requestAnimationFrame(tickFlowLight);
+        }
+      });
+      flowLightRafId = requestAnimationFrame(tickFlowLight);
     })();
 
     // ===== LIVE MONITOR：讓右欄（系統異常清單）的底部，精準對齊左欄（KPI＋平台佔比）的底部 =====
@@ -4952,8 +5243,25 @@ function saveSnapshot(keys) {
 }
 
 function main() {
-  const dailyRuns = loadDailyRuns();
-  const fullHistory = loadFullHistory();
+  let dailyRuns;
+  let fullHistory;
+
+  if (USE_CSV_AS_PRIMARY_SOURCE) {
+    if (!fs.existsSync(ANDROID_CSV_FILE) && !fs.existsSync(IOS_CSV_FILE)) {
+      console.error(
+        `找不到CSV評論檔案。請把手動匯出的評論檔分別放在：\n  ${ANDROID_CSV_FILE}\n  ${IOS_CSV_FILE}\n` +
+        '（也可以把 generate-dashboard.js 開頭的 USE_CSV_AS_PRIMARY_SOURCE 改成 false，改回使用爬蟲資料。）'
+      );
+      process.exit(1);
+    }
+    const csvData = loadCsvReviews();
+    fullHistory = csvData.android; // 走跟原本android-full-history.json一樣的去重/解析路徑
+    dailyRuns = csvData.ios.length ? [{ date: 'csv-import', ios: csvData.ios }] : [];
+  } else {
+    dailyRuns = loadDailyRuns();
+    fullHistory = loadFullHistory();
+  }
+
   const manualReviews = loadManualReviews();
 
   if (dailyRuns.length === 0 && fullHistory.length === 0 && manualReviews.length === 0) {
@@ -4997,7 +5305,12 @@ function main() {
   } else {
     console.log(`與上次產出報表相比：新增 ${dataset.newReviewsCount.total} 則評論（Google Play ${dataset.newReviewsCount.android}、App Store ${dataset.newReviewsCount.ios}）`);
   }
-  if (!fullHistory.length) {
+  if (USE_CSV_AS_PRIMARY_SOURCE) {
+    console.log('資料來源：CSV匯出檔（爬蟲資料目前暫停使用，程式碼保留，改 USE_CSV_AS_PRIMARY_SOURCE 為 false 可切回）');
+    if (!fullHistory.length) {
+      console.log(`提示：找不到 ${ANDROID_CSV_FILE}，本次沒有Android資料。`);
+    }
+  } else if (!fullHistory.length) {
     console.log('提示：尚未偵測到 data/android-full-history.json，目前 Android 趨勢僅包含每日排程累積的資料。');
   }
 }
