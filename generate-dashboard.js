@@ -1237,6 +1237,20 @@ function renderHtml(dataset) {
     gap:20px;
     align-items:start;
   }
+  /* Grid item 預設 min-width:auto，代表欄位不會縮小到比內部內容的「最小內容寬度」還窄；
+     一旦欄位裡出現不可縮小的固定寬度內容（例如底下的LED Meter，一列裡label/track/count都是
+     固定px、flex-shrink:0），這個欄位（甚至整個 .live-grid）就會被撐寬到超過版面、超出視窗，
+     在窄螢幕上就是使用者看到的「內容跑出邊界」。加 min-width:0 讓欄位可以正常縮小，
+     真正裝不下的內容改由下面 .led-track 內部自己 overflow-x:auto 處理，不會再往外撐開整個頁面。 */
+  .live-grid > div { min-width: 0; }
+  /* LED Meter 的實際內容（5列燈條+刻度尺）高度通常比卡片被撐開後的高度矮很多
+     （卡片高度是跟左欄的KPI+平台佔比對齊撐高的，見syncKeywordCardHeight）。
+     容器內容用置中對齊，讓多出來的空白平均分配在上下，不要整段都堆積在LED meter下方。 */
+  #keywordChartCard .chart-container{
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
   @media (max-width:1100px){
     .live-grid{ grid-template-columns: 1fr; }
     #keywordChartCard{ display:block; }
@@ -1267,7 +1281,7 @@ function renderHtml(dataset) {
     padding-top: 0;
     padding-left: 0;
     padding-right: 0;
-    padding-bottom: 0;
+    padding-bottom: 14px; /* 圖例(本期/上期)跟卡片底部邊界之間留一點呼吸空間，不要緊貼在一起 */
     overflow: hidden;
   }
   .live-col-radar .radar-scan-wrap{
@@ -1361,10 +1375,24 @@ function renderHtml(dataset) {
     color: var(--muted);
     margin-right: 5px;
   }
+  .led-track-scroll {
+    /* 安全網：正常情況下容器夠寬，這層幾乎不會觸發捲動；只有在螢幕極窄、
+       就算套用下面 640px 斷點的縮小版尺寸也還是放不下時，才會在「這一列自己的範圍內」
+       橫向捲動，不會撐開 .chart-card、更不會撐開整個頁面（配合上面 .live-grid > div 的
+       min-width:0 一起生效）。隱藏捲軸是為了維持HUD儀表的視覺乾淨。 */
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .led-track-scroll::-webkit-scrollbar { display: none; }
   .led-track {
     display: flex;
     gap: 2px;
     flex-shrink: 0;
+    width: 198px;
   }
   .led-seg {
     width: 3px;
@@ -1377,8 +1405,8 @@ function renderHtml(dataset) {
     animation-delay: var(--seg-delay, 0ms);
   }
   .led-seg.is-active {
-    background: #00FF88;
-    box-shadow: 0 0 6px rgba(0,255,136,0.45);
+    background: rgb(var(--hud-glow));
+    box-shadow: 0 0 6px rgba(var(--hud-glow), 0.45);
     transition: box-shadow 0.2s ease;
   }
   .led-seg.is-overload {
@@ -1387,7 +1415,7 @@ function renderHtml(dataset) {
     transition: box-shadow 0.2s ease;
   }
   @media (hover: hover) {
-    .led-row:hover .led-seg.is-active { box-shadow: 0 0 10px rgba(0,255,136,0.8); }
+    .led-row:hover .led-seg.is-active { box-shadow: 0 0 10px rgba(var(--hud-glow), 0.8); }
     .led-row:hover .led-seg.is-overload { box-shadow: 0 0 10px rgba(255,176,0,0.85); }
   }
   @keyframes ledSweepIn {
@@ -1397,7 +1425,7 @@ function renderHtml(dataset) {
   .led-count {
     font-family: "JetBrains Mono", "Space Mono", ui-monospace, monospace;
     font-size: 12px;
-    color: #00FF88;
+    color: rgb(var(--hud-glow));
     white-space: nowrap;
     flex-shrink: 0;
   }
@@ -1427,6 +1455,15 @@ function renderHtml(dataset) {
   .led-scale-track .tick.minor {
     height: 3px;
     background: rgba(255,255,255,0.15);
+  }
+  /* 窄螢幕：縮小 label 欄寬、列間距、字級，盡量讓完整198px的燈條不用捲動就能顯示；
+     真的還是放不下的極窄裝置，就交給上面 .led-track-scroll 的 overflow-x:auto 兜底。
+     燈格本身尺寸（3px/2px間隙）刻意不縮小，維持規格要求的實體尺寸。 */
+  @media (max-width: 640px) {
+    .led-row { gap: 8px; }
+    .led-label { width: 76px; font-size: 11px; }
+    .led-scale-spacer { width: 76px; }
+    .led-count { font-size: 11px; }
   }
 
   .h2-note {
@@ -2011,7 +2048,7 @@ function renderHtml(dataset) {
       <div class="live-col-2">
         <div class="chart-card live-col-radar">
           <h2 style="margin:0; padding:0 20px;">健康雷達 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">5個軸分別是：抱怨/bug、功能請求、純稱讚、一般（依評論意圖分類佔比換算，總和100%）；版本穩定度＝沒有發生評分驟降的版本佔全部版本的比例。範圍越靠外圍越好，但「抱怨/bug」軸例外——越靠外圍代表抱怨佔比越高，越差。實線（本期）＝依資料日期範圍中點切分後較新的一半，虛線（上期）＝較舊的一半，供對照趨勢。點擊「本期」的軸可查看該類別的實際評論。</div></span></h2>
-          <div class="chart-container radar-scan-wrap" style="height:440px; position:relative;">
+          <div class="chart-container radar-scan-wrap" style="height:380px; position:relative;">
             <canvas id="healthRadarChart"></canvas>
           </div>
         </div>
@@ -3293,7 +3330,7 @@ function renderHtml(dataset) {
             '<div class="led-label" title="' + w.word + '">' +
               '<span class="led-idx">' + idx + '</span><span class="led-slash">//</span>' + w.word +
             '</div>' +
-            '<div class="led-track">' + trackHtml + '</div>' +
+            '<div class="led-track-scroll"><div class="led-track">' + trackHtml + '</div></div>' +
             '<div class="led-count' + (isOverload ? ' is-overload' : '') + '">' + countLabel + '</div>' +
           '</div>'
         );
