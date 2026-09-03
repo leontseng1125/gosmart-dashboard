@@ -867,7 +867,7 @@ function renderHtml(dataset) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>阿葛格 評論追蹤小王子</title>
+<title>阿葛格 宇航一等兵</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -1847,7 +1847,7 @@ function renderHtml(dataset) {
     <div class="drawer-body" id="drawerBody"></div>
   </div>
 
-  <h1>阿葛格 評論追蹤小王子</h1>
+  <h1>阿葛格 宇航一等兵</h1>
   <div class="subtitle" id="subtitle"></div>
   <div class="mono" id="hudStrip" style="font-size:11px; color:rgb(var(--hud-glow)); margin:-4px 0 20px; letter-spacing:0.03em; opacity:0.9;"></div>
 
@@ -2739,6 +2739,7 @@ function renderHtml(dataset) {
               labels: { color: '#9aa0ac', font: { family: 'JetBrains Mono, monospace', size: 10 }, boxWidth: 12, padding: 12 },
             },
             tooltip: {
+              animation: { duration: 0 }, // 這張圖有掃描光效果會持續重繪，tooltip淡入動畫容易被打斷卡在半透明，改成不淡入直接顯示
               callbacks: {
                 label: (ctx) => ctx.dataset.label + ' · ' + ctx.label + '：' + ctx.raw + '%' + (ctx.datasetIndex === 0 ? '（點擊查看評論）' : ''),
               },
@@ -2930,6 +2931,7 @@ function renderHtml(dataset) {
               labels: { color: '#9aa0ac', font: { family: 'JetBrains Mono, monospace', size: 10 }, boxWidth: 10, padding: 10 },
             },
             tooltip: {
+              animation: { duration: 0 }, // 這張圖有光點+漣漪效果會持續重繪，同樣的道理關掉tooltip淡入動畫
               callbacks: {
                 label: (ctx) => ctx.label + '：' + ctx.raw + ' 則',
               },
@@ -3109,6 +3111,7 @@ function renderHtml(dataset) {
           plugins: {
             legend: { display: false },
             tooltip: {
+              animation: { duration: 0 }, // 這張圖有流光效果會持續重繪(chart.draw())，tooltip原本的淡入動畫容易被打斷、卡在半透明看起來很淡，改成不淡入、直接完整顯示
               callbacks: {
                 label: (ctx) => '共 ' + ctx.raw + ' 則負評（點擊查看）',
               },
