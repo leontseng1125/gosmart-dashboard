@@ -801,7 +801,7 @@ function buildDataset(dailyRuns, fullHistory, manualReviews) {
   const recentNegativeReviews = allReviewsFlatWithManual.filter(
     (r) => r.sentiment === 'negative' && recentMonthsForKeywords.includes(r.month)
   );
-  const recentNegativeWordFrequency = extractWordFrequency(recentNegativeReviews, [2, 3]).slice(0, 15);
+  const recentNegativeWordFrequency = extractWordFrequency(recentNegativeReviews, [2, 3]).slice(0, 20);
 
   const otherCount = allReviewsFlatWithManual.filter((r) => r.categories.includes(OTHER_CATEGORY)).length;
 
@@ -1391,11 +1391,15 @@ function renderHtml(dataset) {
   .led-track {
     display: flex;
     gap: 2px;
-    flex-shrink: 0;
-    width: 198px;
+    width: 100%;
   }
   .led-seg {
-    width: 3px;
+    /* RWD：flex-grow讓燈格在大螢幕、卡片夠寬時可以長寬一點，不要固定死3px造成
+       右邊留一大片空白；flex-shrink:0 + flex-basis 3px 是小螢幕的下限，維持原本
+       「小網沒問題」的樣子不變——螢幕不夠寬時容器本身沒有多餘空間可以grow，
+       行為會跟改之前完全一樣；真的連3px的下限都放不下，交給.led-track-scroll捲動。 */
+    flex: 1 0 3px;
+    max-width: 10px;
     height: 12px;
     border-radius: 1px;
     background: rgba(255,255,255,0.05);
@@ -1428,6 +1432,8 @@ function renderHtml(dataset) {
     color: rgb(var(--hud-glow));
     white-space: nowrap;
     flex-shrink: 0;
+    min-width: 64px;
+    text-align: right;
   }
   .led-count.is-overload { color: var(--neg); }
   .led-scale {
@@ -1437,11 +1443,18 @@ function renderHtml(dataset) {
     margin-top: 2px;
   }
   .led-scale-spacer { width: 118px; flex-shrink: 0; }
+  .led-scale-spacer-right { width: 64px; flex-shrink: 0; }
+  .led-scale-track-scroll {
+    /* 跟 .led-track-scroll 用同一套 flex 規則（flex:1 1 auto; min-width:0），
+       確保刻度尺的寬度在任何螢幕寬度下都會跟上面燈條的實際寬度算出同一個結果，
+       刻度用百分比定位（見 buildScaleTicks()）才能穩定對齊，不用額外寫JS去量測燈條寬度。 */
+    flex: 1 1 auto;
+    min-width: 0;
+  }
   .led-scale-track {
     position: relative;
-    width: 198px;
+    width: 100%;
     height: 9px;
-    flex-shrink: 0;
   }
   .led-scale-track .tick {
     position: absolute;
@@ -1461,6 +1474,7 @@ function renderHtml(dataset) {
      燈格本身尺寸（3px/2px間隙）刻意不縮小，維持規格要求的實體尺寸。 */
   @media (max-width: 640px) {
     .led-row { gap: 8px; }
+    .led-scale { gap: 8px; }
     .led-label { width: 76px; font-size: 11px; }
     .led-scale-spacer { width: 76px; }
     .led-count { font-size: 11px; }
@@ -2055,7 +2069,7 @@ function renderHtml(dataset) {
 
         <div class="chart-card" id="keywordChartCard" style="display:flex; flex-direction:column;">
           <h2 style="margin:0 0 2px;">近期熱門負評關鍵字 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">取最近一年（12個月）的負評，用「雙字詞＋三字詞」統計常見詞彙（跟評論tab的字詞頻率排行同一套邏輯）。點擊長條可查看包含該詞的負評。</div></span></h2>
-          <div class="note" style="margin:2px 0 10px;">最近一年負評，依出現則數排序（前5名）</div>
+          <div class="note" id="keywordChartNote" style="margin:2px 0 10px;">最近一年負評，依出現則數排序（前5名）</div>
           <div class="chart-container" style="flex:1; min-height:220px;">
             <div id="recentKeywordChart" class="led-meter"></div>
           </div>
@@ -3277,6 +3291,12 @@ function renderHtml(dataset) {
 
     // ===== LIVE MONITOR：近期熱門負評關鍵字（改用長條圖，取代原本的文字雲呈現） =====
     // ===== LIVE MONITOR：近期熱門負評關鍵字（戰術點陣 LED Meter，取代原本 Chart.js 長條圖） =====
+    // renderKeywordRows：由 syncKeywordCardHeight() 依卡片實際可用高度呼叫，
+    // 決定LED Meter要顯示幾列關鍵字（大螢幕空間多就多顯示幾列，填滿空間；
+    // 窄螢幕維持原本固定5列，這是原本就沒問題的版面，不用動）。
+    // 先在外層宣告，避免在renderRecentKeywordChart完成賦值之前被提前呼叫時噴錯。
+    let renderKeywordRows = null;
+
     (function renderRecentKeywordChart() {
       const container = document.getElementById('recentKeywordChart');
       if (!container) return;
@@ -3287,9 +3307,9 @@ function renderHtml(dataset) {
         return;
       }
 
-      const shown = words.slice(0, 5); // 移到雷達圖下方後空間變小，改取前5個
       const CAPACITY = 40; // 每條軌道固定40格
       const OVERLOAD_TAIL = 5; // 超過上限時，末端幾格轉警示色
+      const MAX_ROWS = words.length; // Node端(generate-dashboard.js)最多保留15筆，見 recentNegativeWordFrequency
 
       // 每個燈格用 CSS 變數帶入進場動畫的延遲時間，做出「由左至右逐格點亮」的掃描效果；
       // 40格全部一起錯開時間太久會顯得拖沓，這裡限制在很短的時間窗內（每格4ms）掃完。
@@ -3310,39 +3330,17 @@ function renderHtml(dataset) {
       }
 
       // 底部刻度：每10格一個較亮的主刻度，每5格一個較淡的次刻度，純視覺，不帶數字。
-      // 40格、每格間距(3px寬+2px間隙)=5px，第 n 格左緣位置＝ n*5px。
+      // 改用百分比定位（n/40）而不是固定px，因為燈條現在是RWD的（大螢幕會grow變寬），
+      // 百分比可以確保不管燈條實際渲染出來多寬，刻度永遠對齊在正確的格數位置上。
       function buildScaleTicks() {
         let ticks = '';
         for (let n = 0; n <= CAPACITY; n += 5) {
           const isMajor = n % 10 === 0;
-          const left = Math.min(n * 5, CAPACITY * 5 - 1);
-          ticks += '<span class="tick ' + (isMajor ? 'major' : 'minor') + '" style="left:' + left + 'px"></span>';
+          const leftPct = Math.min((n / CAPACITY) * 100, 99.5);
+          ticks += '<span class="tick ' + (isMajor ? 'major' : 'minor') + '" style="left:' + leftPct.toFixed(3) + '%"></span>';
         }
         return ticks;
       }
-
-      const rowsHtml = shown.map((w, i) => {
-        const { html: trackHtml, isOverload } = buildTrack(w.count);
-        const idx = String(i + 1).padStart(2, '0');
-        const countLabel = isOverload ? ('[ ' + w.count + '! ]') : ('[ ' + w.count + ' 則 ]');
-        return (
-          '<div class="led-row" data-word-index="' + i + '" role="button" tabindex="0">' +
-            '<div class="led-label" title="' + w.word + '">' +
-              '<span class="led-idx">' + idx + '</span><span class="led-slash">//</span>' + w.word +
-            '</div>' +
-            '<div class="led-track-scroll"><div class="led-track">' + trackHtml + '</div></div>' +
-            '<div class="led-count' + (isOverload ? ' is-overload' : '') + '">' + countLabel + '</div>' +
-          '</div>'
-        );
-      }).join('');
-
-      const scaleHtml =
-        '<div class="led-scale">' +
-          '<div class="led-scale-spacer"></div>' +
-          '<div class="led-scale-track">' + buildScaleTicks() + '</div>' +
-        '</div>';
-
-      container.innerHTML = rowsHtml + scaleHtml;
 
       // 點擊某一列＝查看該關鍵字相關負評，篩選條件要跟數字來源完全一致（近一年＋負評），
       // 不能只篩負評卻不限時間範圍，不然點進去看到的則數會比燈格代表的數字多。
@@ -3354,16 +3352,50 @@ function renderHtml(dataset) {
         openReviewDrawer('「' + word + '」相關負評', '共 ' + matched.length + ' 則', matched);
       }
 
-      container.querySelectorAll('.led-row').forEach((row) => {
-        const word = shown[Number(row.dataset.wordIndex)].word;
-        row.addEventListener('click', () => openWordDrawer(word));
-        row.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            openWordDrawer(word);
-          }
+      function renderRows(rowCount) {
+        const shown = words.slice(0, Math.max(1, Math.min(rowCount, MAX_ROWS)));
+
+        const noteEl = document.getElementById('keywordChartNote');
+        if (noteEl) noteEl.textContent = '最近一年負評，依出現則數排序（前' + shown.length + '名）';
+
+        const rowsHtml = shown.map((w, i) => {
+          const { html: trackHtml, isOverload } = buildTrack(w.count);
+          const idx = String(i + 1).padStart(2, '0');
+          const countLabel = isOverload ? ('[ ' + w.count + '! ]') : ('[ ' + w.count + ' 則 ]');
+          return (
+            '<div class="led-row" data-word-index="' + i + '" role="button" tabindex="0">' +
+              '<div class="led-label" title="' + w.word + '">' +
+                '<span class="led-idx">' + idx + '</span><span class="led-slash">//</span>' + w.word +
+              '</div>' +
+              '<div class="led-track-scroll"><div class="led-track">' + trackHtml + '</div></div>' +
+              '<div class="led-count' + (isOverload ? ' is-overload' : '') + '">' + countLabel + '</div>' +
+            '</div>'
+          );
+        }).join('');
+
+        const scaleHtml =
+          '<div class="led-scale">' +
+            '<div class="led-scale-spacer"></div>' +
+            '<div class="led-scale-track-scroll"><div class="led-scale-track">' + buildScaleTicks() + '</div></div>' +
+            '<div class="led-scale-spacer-right"></div>' +
+          '</div>';
+
+        container.innerHTML = rowsHtml + scaleHtml;
+
+        container.querySelectorAll('.led-row').forEach((row) => {
+          const word = shown[Number(row.dataset.wordIndex)].word;
+          row.addEventListener('click', () => openWordDrawer(word));
+          row.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              openWordDrawer(word);
+            }
+          });
         });
-      });
+      }
+
+      renderRows(5); // 先渲染預設5列（原本的行為），等版面高度定案後，syncKeywordCardHeight() 可能會呼叫 renderKeywordRows() 展開更多列
+      renderKeywordRows = renderRows;
     })();
 
 
@@ -3404,6 +3436,7 @@ function renderHtml(dataset) {
 
       if (window.innerWidth <= 1100) {
         card.style.height = '';
+        if (renderKeywordRows) renderKeywordRows(5); // 窄螢幕維持原本固定5列，版面本來就沒問題
         return;
       }
 
@@ -3414,7 +3447,24 @@ function renderHtml(dataset) {
       const minHeight = 130; // 保留最基本的可讀高度，避免資料一多、算出來的高度被壓成看不出內容
 
       if (targetHeight > 0) {
-        card.style.height = Math.max(targetHeight, minHeight) + 'px';
+        const finalHeight = Math.max(targetHeight, minHeight);
+        card.style.height = finalHeight + 'px';
+
+        // 大螢幕上這張卡片常會被撐得比LED Meter本身內容還高（見上方對齊左欄底部的邏輯），
+        // 固定顯示5列會在下面留一大片空白。這裡改成依卡片實際可用高度，動態算出能放幾列，
+        // 撐得越高就多顯示幾列關鍵字，把多出來的空間換成有用的資訊，而不是空白。
+        // ROW_HEIGHT／SCALE_HEIGHT是估算值（列高+行距、底部刻度尺區域），加SAFETY_MARGIN
+        // 是為了避免算得剛剛好、不同瀏覽器的字型度量差異導致最後一列被裁切。
+        if (renderKeywordRows) {
+          const containerEl = card.querySelector('.chart-container');
+          const availableHeight = containerEl ? containerEl.getBoundingClientRect().height : 0;
+          const ROW_HEIGHT = 31;
+          const SCALE_HEIGHT = 20;
+          const SAFETY_MARGIN = 8;
+          const rowCapacity = Math.floor((availableHeight - SCALE_HEIGHT - SAFETY_MARGIN) / ROW_HEIGHT);
+          const rowCount = Math.max(5, rowCapacity); // renderRows()內部會再依實際資料筆數(最多15筆)夾住上限
+          renderKeywordRows(rowCount);
+        }
       }
     }
 
