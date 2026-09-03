@@ -1187,6 +1187,14 @@ function renderHtml(dataset) {
   }
   .group-btn.active .group-title{ color: rgb(var(--hud-glow)); }
   .group-subtitle{ font-size:12px; color: var(--muted); opacity:0.75; }
+  /* 打字動效播完之後，用一個閃爍指標標示「目前選取中」，只有被選取的按鈕會有 */
+  .group-title.caret-blink::after{
+    content:'_';
+    display:inline-block;
+    margin-left:2px;
+    animation: groupCaretBlink 1s steps(1) infinite;
+  }
+  @keyframes groupCaretBlink{ 50%{ opacity:0; } }
 
   .anomaly-row{ display:flex; align-items:center; gap:9px; padding:8px 2px; border-bottom:1px solid var(--border); font-size:12px; cursor:pointer; }
   .anomaly-row:last-child{ border-bottom:none; }
@@ -1195,7 +1203,9 @@ function renderHtml(dataset) {
   .anomaly-severity.critical{ background:#FF3860; box-shadow:0 0 6px rgba(255,56,96,0.8); }
   .anomaly-severity.warn{ background:#FFAA00; }
   .anomaly-tag-type{ font-size:10px; color:var(--muted); width:34px; flex-shrink:0; letter-spacing:0.03em; }
-  .anomaly-label{ flex:1; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .anomaly-label{ flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .anomaly-label.critical{ color:#FF3860; }
+  .anomaly-label.warn{ color:#FFAA00; }
   .anomaly-count{ color:var(--muted); font-size:11px; flex-shrink:0; }
 
   .radar-scan-wrap{ overflow: hidden; border-radius: 8px; position: relative; }
@@ -1455,7 +1465,9 @@ function renderHtml(dataset) {
     .two-col { grid-template-columns: 1fr; }
   }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; white-space: nowrap; }
+  /* 表格欄位預設一律不折行（含標題），只有實際評論內容本身允許正常換行 */
+  .review-text, .review-meta { white-space: normal; }
   th { color: var(--muted); font-weight: 500; font-size: 12px; }
   .badge {
     display: inline-block;
@@ -1912,7 +1924,6 @@ function renderHtml(dataset) {
     <button class="tab-btn active" data-tab="comments">評論</button>
     <button class="tab-btn" data-tab="autosummary">自動摘要</button>
     <button class="tab-btn" data-tab="sentiment">回饋洞察</button>
-    <button class="tab-btn" data-tab="versionratings">版本/評分</button>
     <button class="tab-btn" data-tab="favorites">收藏</button>
   </div>
 
@@ -2055,42 +2066,6 @@ function renderHtml(dataset) {
       </div>
       <div class="note">只列出「本月至少 2 則」且比上月增加的分類，避免 1 則的雜訊被誤判成趨勢。點擊任一列可查看本月該分類的負評內容。</div>
     </div>
-    </div>
-  </div>
-
-  <div class="tab-panel" id="tab-versionratings">
-    <div class="grid grid-2col" id="ratingsSummaryCards" style="margin-bottom: 20px;"></div>
-
-    <div class="chart-card">
-      <h2>每月平均評分趨勢</h2>
-      <div class="chart-container">
-        <canvas id="trendChart" height="90"></canvas>
-      </div>
-      <div class="note">iOS 目前僅涵蓋近期資料（App Store 網頁無法回溯完整歷史），Android 已涵蓋完整歷史（如已執行過 android-full-history.js）。</div>
-    </div>
-
-    <div class="two-col">
-      <div class="chart-card">
-        <h2>Google Play 星等分佈</h2>
-        <div class="chart-container">
-        <canvas id="androidDistChart" height="180"></canvas>
-      </div>
-      </div>
-      <div class="chart-card">
-        <h2>App Store 星等分佈</h2>
-        <div class="chart-container">
-        <canvas id="iosDistChart" height="180"></canvas>
-      </div>
-      </div>
-    </div>
-
-    <div class="chart-card">
-      <h2>各版本平均評分與評論數</h2>
-      <div class="h2-note">僅 Google Play，App Store 抓取流程目前未取得版本號</div>
-      <div class="chart-container">
-        <canvas id="versionChart" height="100"></canvas>
-      </div>
-      <div class="note">若某個版本後評分明顯下滑，通常代表該次改版造成體驗劣化，可以回頭比對該版本的更新內容。滑鼠移到長條上可看該版本的則數與平均星等。</div>
     </div>
   </div>
 
@@ -2354,14 +2329,55 @@ function renderHtml(dataset) {
     const TAB_STORAGE_KEY = 'gosmart-active-tab';
     const GROUP_STORAGE_KEY = 'gosmart-active-group';
 
+    // ===== 三大分組按鈕的英文標題：被選取時打字動效播一次，播完後改成閃爍指標 =====
+    // 用 data-full 記住完整文字（第一次執行時從目前內容快取起來），這樣不管重播幾次
+    // 都知道原本完整的字是什麼，不會因為中途被清空重打而弄丟。
+    function typeGroupTitle(titleEl) {
+      if (!titleEl) return;
+      const full = titleEl.dataset.full || titleEl.textContent;
+      titleEl.dataset.full = full;
+      if (titleEl._typeTimer) {
+        clearInterval(titleEl._typeTimer);
+        titleEl._typeTimer = null;
+      }
+      titleEl.classList.remove('caret-blink');
+      titleEl.textContent = '';
+      let i = 0;
+      titleEl._typeTimer = setInterval(() => {
+        i++;
+        titleEl.textContent = full.slice(0, i);
+        if (i >= full.length) {
+          clearInterval(titleEl._typeTimer);
+          titleEl._typeTimer = null;
+          titleEl.classList.add('caret-blink'); // 打完字之後才開始閃爍指標
+        }
+      }, 45);
+    }
+
+    // 按鈕被切換掉（不再是目前選取的分組）時：中斷可能還在跑的打字動畫、直接顯示完整文字、拿掉閃爍指標
+    function resetGroupTitle(titleEl) {
+      if (!titleEl) return;
+      if (titleEl._typeTimer) {
+        clearInterval(titleEl._typeTimer);
+        titleEl._typeTimer = null;
+      }
+      const full = titleEl.dataset.full || titleEl.textContent;
+      titleEl.textContent = full;
+      titleEl.classList.remove('caret-blink');
+    }
+
     function activateGroup(groupName) {
       const btn = document.querySelector('.group-btn[data-group="' + groupName + '"]');
       const panel = document.getElementById('group-' + groupName);
       if (!btn || !panel) return false;
-      document.querySelectorAll('.group-btn').forEach((b) => b.classList.remove('active'));
+      document.querySelectorAll('.group-btn').forEach((b) => {
+        b.classList.remove('active');
+        if (b !== btn) resetGroupTitle(b.querySelector('.group-title'));
+      });
       document.querySelectorAll('.group-panel').forEach((p) => p.classList.remove('active'));
       btn.classList.add('active');
       panel.classList.add('active');
+      typeGroupTitle(btn.querySelector('.group-title'));
       return true;
     }
 
@@ -2395,6 +2411,11 @@ function renderHtml(dataset) {
       }
     })();
 
+    // 頁面剛載入時，把「目前使用中」的那個分組按鈕也播一次打字動效
+    // （如果上面 restoreActiveGroupAndTab 已經呼叫過 activateGroup 觸發過一次，
+    // 這裡等於重新觸發、乾淨地重播一次，不會疊加或衝突）。
+    typeGroupTitle(document.querySelector('.group-btn.active .group-title'));
+
     // ===== 讓所有分組/分頁在圖表建立當下都先有「正確的版面尺寸」，避免圖表在寬高是 0 的
     //      隱藏區塊裡建立、內部座標塌陷到左上角（切換時修正尺寸會變成從左上角「彈出來」的怪異動畫）=====
     // 做法：暫時讓所有分組/分頁都用 visibility:hidden（保留版面空間、但不會被畫出來）取代
@@ -2417,12 +2438,14 @@ function renderHtml(dataset) {
       console.warn('縮放/平移外掛未成功載入，圖表的滾輪縮放與拖曳平移功能可能無法使用（不影響其他功能）。');
     }
 
-    // ===== 圖表進場動畫（每次重整網頁都會重新播放一次，因為每次都是重新建立圖表） =====
-    // 全域預設：Chart.js 對長條圖的預設動畫本來就是「從座標軸的 0 基準點往外長出」，
-    // 直立長條圖剛好符合「由下往上長出」、橫條圖剛好符合「由左往右長出」，
-    // 所以只要確保動畫有開啟、給一個統一的時長跟緩動曲線即可，不需要每張圖表另外寫設定。
+    // ===== 圖表進場動畫：全站關閉 =====
+    // 原本這裡是全域預設進場動畫（duration 800），但 Chart.js 用同一個全域動畫排程器處理
+    // 全站所有圖表，一旦其中任何一個圖表的動畫組態觸發內部異常（this._fn is not a function），
+    // 整個排程器就會壞掉，殃及所有還在用動畫的圖表，連 tooltip 的淡入也一起失效。
+    // 唯一目前確認完全沒事的圖表（矩陣圖、月趨勢散佈圖）共同點就是 animation:false，
+    // 所以全站直接關閉進場動畫，圖表一載入就直接顯示最終樣子，不再冒這個風險。
     if (window.Chart) {
-      Chart.defaults.animation = { duration: 800, easing: 'easeOutQuart' };
+      Chart.defaults.animation = false;
     }
 
     // 散佈圖（純點點，例如每月評論趨勢、頻率×嚴重度矩陣）：用「淡入」取代 Chart.js 預設的
@@ -2558,7 +2581,6 @@ function renderHtml(dataset) {
     })();
 
     const summaryEl = document.getElementById('summaryCards');
-    const ratingsSummaryEl = document.getElementById('ratingsSummaryCards');
 
     function renderCardGroup(containerEl, cardsList, options) {
       const square = options && options.square;
@@ -2598,6 +2620,58 @@ function renderHtml(dataset) {
       { label: 'Google Play<br>新評論數', value: dataset.newReviewsCount.android, cls: 'new-count', decimals: 0, clickKey: 'android-new' },
       { label: 'App Store<br>新評論數', value: dataset.newReviewsCount.ios, cls: 'new-count', decimals: 0, clickKey: 'ios-new' },
     ], { clickable: true });
+
+    // ===== 共用：建立一顆疊在圖表 canvas 上的透明畫布，專門畫「持續動畫」的裝飾效果 =====
+    // 背景：雷達圖掃描光、平台佔比的光點漣漪、關鍵字長條圖的流光，這三個效果都需要
+    // 不間斷的 requestAnimationFrame 重繪才能「動起來」。原本的做法是直接呼叫
+    // chartInstance.draw()，但這會跟 Chart.js 自己管理的 tooltip / hover 重繪排程
+    // 搶同一顆 canvas，導致 tooltip 顯示不穩定（不觸發、或觸發後被下一幀的裝飾效果蓋掉變很淡）。
+    // 改成疊加一顆完全獨立的 canvas 專門畫裝飾效果，Chart.js 的 canvas 就不會再被外部
+    // 的 draw() 打斷，tooltip 交回 Chart.js 自己管理即可恢復正常。
+    //
+    // 注意：這裡故意不自己另外掛 ResizeObserver 去監聽 mainCanvas——Chart.js 自己在
+    // responsive:true 時，也會在 canvas 的父層容器掛一個內部的 ResizeObserver。
+    // 如果我們又在「同一顆 canvas」上疊加一個自己的 ResizeObserver、又同時動它所在容器的
+    // DOM 結構（插入疊加層），實測會跟 Chart.js 內部剛好在初始化的 resize 監聽機制衝突，
+    // 導致 Chart.js 內部（chart.umd.min.js）直接丟出例外，波及所有圖表共用的動畫排程器，
+    // 讓全站所有圖表的 tooltip 都跟著壞掉。
+    // 改成完全交給 Chart.js 自己的 options.onResize(chart, size) 回呼通知我們「resize完成了」，
+    // 我們只在那個時間點呼叫 overlay.resize() 同步疊加層尺寸，不再自己監聽容器，
+    // 也不在 Chart 建立過程中去異動它的父層 DOM（呼叫端會在 new Chart(...) 完成之後才呼叫這個函式）。
+    // insertBefore：true＝疊加畫布放在圖表 canvas「後面」（裝飾效果在圖表下方，例如雷達圖掃描光
+    // 原本用 beforeDatasetsDraw 畫在資料之前）；false＝疊加畫布放在圖表 canvas「上面」
+    // （裝飾效果在圖表上方，例如原本用 afterDraw／afterDatasetsDraw 疊加的光點/流光效果）。
+    function createEffectOverlay(mainCanvas, { insertBefore = false } = {}) {
+      const overlay = document.createElement('canvas');
+      overlay.style.position = 'absolute';
+      overlay.style.inset = '0';
+      overlay.style.width = '100%';
+      overlay.style.height = '100%';
+      overlay.style.pointerEvents = 'none'; // 純視覺效果，滑鼠事件要穿透到底下真正的 Chart.js canvas
+
+      const parent = mainCanvas.parentElement;
+      if (parent && getComputedStyle(parent).position === 'static') {
+        parent.style.position = 'relative'; // 保險起見，確保疊加層的絕對定位是相對這個容器
+      }
+      if (insertBefore) {
+        parent.insertBefore(overlay, mainCanvas);
+      } else {
+        parent.insertBefore(overlay, mainCanvas.nextSibling);
+      }
+
+      const ctx = overlay.getContext('2d');
+
+      function resize() {
+        const dpr = window.devicePixelRatio || 1;
+        const rect = mainCanvas.getBoundingClientRect();
+        overlay.width = Math.max(1, Math.round(rect.width * dpr));
+        overlay.height = Math.max(1, Math.round(rect.height * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+      resize();
+
+      return { canvas: overlay, ctx, resize };
+    }
 
     // ===== LIVE MONITOR：健康雷達圖（意圖分佈4軸 + 版本穩定度1軸） =====
     (function renderHealthRadar() {
@@ -2652,43 +2726,48 @@ function renderHtml(dataset) {
       // 這裡先用 getComputedStyle 把主色的實際RGB值讀出來，再組成 canvas 看得懂的字串。
       const glowRgb = getComputedStyle(document.documentElement).getPropertyValue('--hud-glow').trim() || '198, 242, 78';
 
-      // ===== 掃描光效果：直接畫在雷達圖的canvas上，不再用另一個DOM元素疊圖去猜位置 =====
-      // 這樣掃描光跟雷達圖本身用的是同一套座標系統（Chart.js的 scales.r.xCenter/yCenter/drawingArea），
-      // 不會再有「DOM覆蓋層」跟「canvas內部實際幾何」對不齊的問題。
+      // ===== 掃描光效果：畫在獨立的疊加 canvas 上（見 createEffectOverlay），不再進到 Chart.js 的圖表 canvas =====
+      // insertBefore:true 讓疊加層放在雷達圖 canvas 底下，維持跟原本 beforeDatasetsDraw 一樣
+      // 「掃描光在資料線/tooltip 後面」的視覺順序。
       let sweepAngle = 0;
-      const radarSweepPlugin = {
-        id: 'radarSweepPlugin',
-        beforeDatasetsDraw(chart) {
-          const rScale = chart.scales && chart.scales.r;
-          if (!rScale || typeof rScale.xCenter !== 'number') return;
-          if (typeof chart.ctx.createConicGradient !== 'function') return; // 舊瀏覽器沒有這個API就跳過裝飾效果，不影響圖表本身
+      let sweepOverlay = null; // 建立 Chart 之後才會賦值，避免在 Chart.js 初始化過程中異動它的父層 DOM
 
-          const { ctx } = chart;
-          const { xCenter, yCenter } = rScale;
+      function drawSweep() {
+        if (!sweepOverlay) return;
+        const { ctx } = sweepOverlay;
+        const rect = canvas.getBoundingClientRect();
+        ctx.clearRect(0, 0, rect.width, rect.height);
 
-          // 半徑改成動態算：用「圓心到畫布最遠角落」的距離，
-          // 這樣不管卡片實際多寬多高，掃描光轉一圈都能覆蓋到整個區塊，不會只在中間畫一個小圓。
-          const cw = chart.width || 0;
-          const ch = chart.height || 0;
-          const dx = Math.max(xCenter, cw - xCenter);
-          const dy = Math.max(yCenter, ch - yCenter);
-          const radius = Math.sqrt(dx * dx + dy * dy);
+        const rScale = radarChartInstance && radarChartInstance.scales && radarChartInstance.scales.r;
+        if (!rScale || typeof rScale.xCenter !== 'number') return;
+        if (typeof ctx.createConicGradient !== 'function') return; // 舊瀏覽器沒有這個API就跳過裝飾效果，不影響圖表本身
 
-          ctx.save();
-          const gradient = ctx.createConicGradient(sweepAngle, xCenter, yCenter);
-          gradient.addColorStop(0, 'rgba(' + glowRgb + ', 0.35)');
-          gradient.addColorStop(0.16, 'rgba(' + glowRgb + ', 0)');
-          gradient.addColorStop(1, 'rgba(' + glowRgb + ', 0)');
-          ctx.beginPath();
-          ctx.arc(xCenter, yCenter, radius, 0, Math.PI * 2);
-          ctx.fillStyle = gradient;
-          ctx.globalCompositeOperation = 'screen';
-          ctx.fill();
-          ctx.restore();
-        },
-      };
+        const { xCenter, yCenter } = rScale;
 
-      const radarChartInstance = new Chart(canvas, {
+        // 半徑改成動態算：用「圓心到畫布最遠角落」的距離，
+        // 這樣不管卡片實際多寬多高，掃描光轉一圈都能覆蓋到整個區塊，不會只在中間畫一個小圓。
+        const cw = radarChartInstance.width || rect.width || 0;
+        const ch = radarChartInstance.height || rect.height || 0;
+        const dx = Math.max(xCenter, cw - xCenter);
+        const dy = Math.max(yCenter, ch - yCenter);
+        const radius = Math.sqrt(dx * dx + dy * dy);
+
+        ctx.save();
+        const gradient = ctx.createConicGradient(sweepAngle, xCenter, yCenter);
+        gradient.addColorStop(0, 'rgba(' + glowRgb + ', 0.35)');
+        gradient.addColorStop(0.16, 'rgba(' + glowRgb + ', 0)');
+        gradient.addColorStop(1, 'rgba(' + glowRgb + ', 0)');
+        ctx.beginPath();
+        ctx.arc(xCenter, yCenter, radius, 0, Math.PI * 2);
+        ctx.fillStyle = gradient;
+        ctx.globalCompositeOperation = 'screen';
+        ctx.fill();
+        ctx.restore();
+      }
+
+      let radarChartInstance; // drawSweep() 會讀取這個變數，先宣告好避免暫時性死區報錯
+
+      radarChartInstance = new Chart(canvas, {
         type: 'radar',
         data: {
           labels,
@@ -2718,11 +2797,11 @@ function renderHtml(dataset) {
             },
           ],
         },
-        plugins: [radarSweepPlugin],
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          animation: { duration: 1400, easing: 'easeOutQuart' },
+          animation: false, // 進場動畫全站關閉，見上方 Chart.defaults.animation 說明
+          onResize: () => { if (sweepOverlay) sweepOverlay.resize(); }, // 疊加層尺寸交給Chart.js自己的resize通知來同步，不再自己另外掛ResizeObserver
           scales: {
             r: {
               min: 0, max: 100,
@@ -2739,7 +2818,7 @@ function renderHtml(dataset) {
               labels: { color: '#9aa0ac', font: { family: 'JetBrains Mono, monospace', size: 10 }, boxWidth: 12, padding: 12 },
             },
             tooltip: {
-              animation: { duration: 0 }, // 這張圖有掃描光效果會持續重繪，tooltip淡入動畫容易被打斷卡在半透明，改成不淡入直接顯示
+              animation: { duration: 0 }, // 掃描光效果已改成畫在獨立疊加canvas（見createEffectOverlay），不再跟這裡的tooltip搶畫布；保留不淡入純粹是喜歡這個顯示效果
               callbacks: {
                 label: (ctx) => ctx.dataset.label + ' · ' + ctx.label + '：' + ctx.raw + '%' + (ctx.datasetIndex === 0 ? '（點擊查看評論）' : ''),
               },
@@ -2764,15 +2843,18 @@ function renderHtml(dataset) {
         },
       });
 
-      // ===== 用 requestAnimationFrame 持續轉動掃描光角度、重繪canvas =====
-      // 因為掃描光現在是plugin直接畫在雷達圖的canvas上（不是另一個DOM元素疊上去），
-      // 要讓它「動起來」，就需要持續呼叫 chart.draw() 重繪；對這種單一雷達圖來說，
-      // 重繪成本很低，不會造成效能問題。分頁切到背景時暫停，切回來再繼續，省資源。
+      // Chart 建立完成、DOM已穩定之後，才建立疊加canvas並插入它的父層容器，
+      // 避免在 Chart.js 初始化/掛內部 ResizeObserver 的過程中去異動同一個容器的 DOM 結構。
+      sweepOverlay = createEffectOverlay(canvas, { insertBefore: true });
+
+      // ===== 用 requestAnimationFrame 持續轉動掃描光角度 =====
+      // 現在只重繪疊加的 sweepOverlay canvas，完全不碰 radarChartInstance，
+      // Chart.js 自己的 tooltip/hover 重繪排程不會再被打斷。分頁切到背景時暫停，切回來再繼續，省資源。
       let sweepRafId = null;
       function tickSweep() {
         sweepAngle += 0.025;
         if (sweepAngle > Math.PI * 2) sweepAngle -= Math.PI * 2;
-        radarChartInstance.draw();
+        drawSweep();
         sweepRafId = requestAnimationFrame(tickSweep);
       }
       document.addEventListener('visibilitychange', () => {
@@ -2852,61 +2934,67 @@ function renderHtml(dataset) {
       // canvas 的顏色設定不支援 var(--xxx) 語法，這裡先讀出主色的實際RGB值
       const glowRgb = getComputedStyle(document.documentElement).getPropertyValue('--hud-glow').trim() || '198, 242, 78';
 
-      // ===== 游標追蹤光點 + 同心圓漣漪：直接畫在canvas上，跟雷達圖掃描光同一招 =====
+      // ===== 游標追蹤光點 + 同心圓漣漪：畫在獨立的疊加 canvas 上（見 createEffectOverlay） =====
+      // 疊加層蓋在圖表 canvas 上面，維持跟原本 afterDraw 一樣「效果在圓環上方」的視覺順序；
+      // 迴圈只重繪這顆疊加 canvas，完全不再呼叫 platformChartInstance.draw()。
       let dotAngle = 0;
       let ripples = []; // 每個元素：{ startTime }（用performance.now()記錄漣漪誕生時間）
       const RIPPLE_DURATION = 1800; // 一圈漣漪從出生到完全淡出要花多久（毫秒）
       const RIPPLE_EXPAND = 22; // 漣漪從外緣往外擴散的最大距離（px）
 
-      const ringEffectsPlugin = {
-        id: 'ringEffectsPlugin',
-        afterDraw(chart) {
-          try {
-            const meta = chart.getDatasetMeta(0);
-            if (!meta || !meta.data || !meta.data.length) return;
-            const arc = meta.data[0];
-            if (typeof arc.x !== 'number') return;
-            const { ctx } = chart;
-            const cx = arc.x, cy = arc.y;
-            const innerR = arc.innerRadius;
-            const outerR = arc.outerRadius;
-            const midR = (innerR + outerR) / 2;
-            const now = performance.now();
+      let platformChartInstance; // drawRingEffects() 會讀取這個變數，先宣告好避免暫時性死區報錯
+      let ringOverlay = null; // 建立 Chart 之後才會賦值，避免在 Chart.js 初始化過程中異動它的父層 DOM
 
-            // 同心圓漣漪：每圈從圓環外緣往外擴散、邊淡出
-            ripples.forEach((r) => {
-              const age = now - r.startTime;
-              if (age > RIPPLE_DURATION) return;
-              const t = age / RIPPLE_DURATION;
-              const radius = outerR + t * RIPPLE_EXPAND;
-              const alpha = (1 - t) * 0.45;
-              ctx.save();
-              ctx.beginPath();
-              ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-              ctx.strokeStyle = 'rgba(' + glowRgb + ', ' + alpha.toFixed(2) + ')';
-              ctx.lineWidth = 2;
-              ctx.stroke();
-              ctx.restore();
-            });
+      function drawRingEffects() {
+        if (!ringOverlay) return;
+        const { ctx } = ringOverlay;
+        const rect = canvas.getBoundingClientRect();
+        ctx.clearRect(0, 0, rect.width, rect.height);
 
-            // 游標追蹤光點：沿著圓環中線持續繞圈
-            const dotX = cx + Math.cos(dotAngle) * midR;
-            const dotY = cy + Math.sin(dotAngle) * midR;
+        try {
+          const meta = platformChartInstance && platformChartInstance.getDatasetMeta(0);
+          if (!meta || !meta.data || !meta.data.length) return;
+          const arc = meta.data[0];
+          if (typeof arc.x !== 'number') return;
+          const cx = arc.x, cy = arc.y;
+          const innerR = arc.innerRadius;
+          const outerR = arc.outerRadius;
+          const midR = (innerR + outerR) / 2;
+          const now = performance.now();
+
+          // 同心圓漣漪：每圈從圓環外緣往外擴散、邊淡出
+          ripples.forEach((r) => {
+            const age = now - r.startTime;
+            if (age > RIPPLE_DURATION) return;
+            const t = age / RIPPLE_DURATION;
+            const radius = outerR + t * RIPPLE_EXPAND;
+            const alpha = (1 - t) * 0.45;
             ctx.save();
             ctx.beginPath();
-            ctx.arc(dotX, dotY, 4, 0, Math.PI * 2);
-            ctx.fillStyle = '#ffffff';
-            ctx.shadowColor = 'rgb(' + glowRgb + ')';
-            ctx.shadowBlur = 9;
-            ctx.fill();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(' + glowRgb + ', ' + alpha.toFixed(2) + ')';
+            ctx.lineWidth = 2;
+            ctx.stroke();
             ctx.restore();
-          } catch (err) {
-            console.error('平台佔比動效繪製失敗：', err);
-          }
-        },
-      };
+          });
 
-      const platformChartInstance = new Chart(canvas, {
+          // 游標追蹤光點：沿著圓環中線持續繞圈
+          const dotX = cx + Math.cos(dotAngle) * midR;
+          const dotY = cy + Math.sin(dotAngle) * midR;
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(dotX, dotY, 4, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowColor = 'rgb(' + glowRgb + ')';
+          ctx.shadowBlur = 9;
+          ctx.fill();
+          ctx.restore();
+        } catch (err) {
+          console.error('平台佔比動效繪製失敗：', err);
+        }
+      }
+
+      platformChartInstance = new Chart(canvas, {
         type: 'doughnut',
         data: {
           labels: ['Android', 'iOS'],
@@ -2917,13 +3005,14 @@ function renderHtml(dataset) {
             borderWidth: 2,
           }],
         },
-        plugins: [pullOutLabelPlugin, ringEffectsPlugin],
+        plugins: [pullOutLabelPlugin],
         options: {
           responsive: true,
           maintainAspectRatio: false,
           cutout: '65%',
           layout: { padding: { top: 18, bottom: 18, left: 40, right: 40 } },
-          animation: { duration: 900, easing: 'easeOutQuart' },
+          animation: false, // 進場動畫全站關閉，見上方 Chart.defaults.animation 說明
+          onResize: () => { if (ringOverlay) ringOverlay.resize(); }, // 疊加層尺寸交給Chart.js自己的resize通知來同步，不再自己另外掛ResizeObserver
           plugins: {
             legend: {
               display: true,
@@ -2931,7 +3020,7 @@ function renderHtml(dataset) {
               labels: { color: '#9aa0ac', font: { family: 'JetBrains Mono, monospace', size: 10 }, boxWidth: 10, padding: 10 },
             },
             tooltip: {
-              animation: { duration: 0 }, // 這張圖有光點+漣漪效果會持續重繪，同樣的道理關掉tooltip淡入動畫
+              animation: { duration: 0 }, // 光點+漣漪效果已改成畫在獨立疊加canvas（見createEffectOverlay），不再跟這裡的tooltip搶畫布；保留不淡入純粹是喜歡這個顯示效果
               callbacks: {
                 label: (ctx) => ctx.label + '：' + ctx.raw + ' 則',
               },
@@ -2946,7 +3035,12 @@ function renderHtml(dataset) {
         },
       });
 
+      // Chart 建立完成、DOM已穩定之後，才建立疊加canvas並插入它的父層容器，
+      // 避免在 Chart.js 初始化/掛內部 ResizeObserver 的過程中去異動同一個容器的 DOM 結構。
+      ringOverlay = createEffectOverlay(canvas);
+
       // ===== 動畫迴圈：光點持續繞圈、每隔一段時間產生新的漣漪 =====
+      // 現在只重繪疊加的 ringOverlay canvas，完全不碰 platformChartInstance。
       let ringRafId = null;
       let lastRippleSpawn = 0;
       function tickRingEffects(ts) {
@@ -2957,7 +3051,7 @@ function renderHtml(dataset) {
           lastRippleSpawn = ts;
         }
         ripples = ripples.filter((r) => ts - r.startTime <= RIPPLE_DURATION);
-        platformChartInstance.draw();
+        drawRingEffects();
         ringRafId = requestAnimationFrame(tickRingEffects);
       }
       document.addEventListener('visibilitychange', () => {
@@ -3023,7 +3117,7 @@ function renderHtml(dataset) {
         return '<div class="anomaly-row" style="animation-delay:' + (i * 60) + 'ms">' +
           '<span class="anomaly-severity ' + severity + '"></span>' +
           '<span class="anomaly-tag-type">' + item.typeShort + '</span>' +
-          '<span class="anomaly-label">' + item.label + '</span>' +
+          '<span class="anomaly-label ' + severity + '">' + item.label + '</span>' +
           '<span class="anomaly-count">' + item.count + '則</span>' +
           '</div>';
       }).join('') || '<div class="note">目前沒有明顯異常</div>';
@@ -3047,48 +3141,54 @@ function renderHtml(dataset) {
       const glowRgb = getComputedStyle(document.documentElement).getPropertyValue('--hud-glow').trim() || '198, 242, 78';
       const shown = words.slice(0, 5); // 移到雷達圖下方後空間變小，改取前5個
 
-      // ===== 流光效果：每根長條上疊一道半透明白色高光帶，持續掃過（demo確認過的參數） =====
-      const flowLightPlugin = {
-        id: 'flowLightPlugin',
-        afterDatasetsDraw(chart) {
-          const meta = chart.getDatasetMeta(0);
-          if (!meta || !meta.data) return;
-          const { ctx } = chart;
-          const now = performance.now();
-          const cycle = 2300; // 流光跑一次全長要多久（毫秒）
+      // ===== 流光效果：畫在獨立的疊加 canvas 上（見 createEffectOverlay） =====
+      // 疊加層蓋在圖表 canvas 上面，維持跟原本 afterDatasetsDraw 一樣「流光在長條上方」的視覺順序；
+      // 迴圈只重繪這顆疊加 canvas，完全不再呼叫 keywordChartInstance.draw()。
+      let keywordChartInstance; // drawFlowLight() 會讀取這個變數，先宣告好避免暫時性死區報錯
+      let flowLightOverlay = null; // 建立 Chart 之後才會賦值，避免在 Chart.js 初始化過程中異動它的父層 DOM
 
-          meta.data.forEach((bar, i) => {
-            const props = bar.getProps(['x', 'y', 'base', 'height'], true);
-            const left = Math.min(props.x, props.base);
-            const right = Math.max(props.x, props.base);
-            const barLen = right - left;
-            if (barLen <= 0) return;
+      function drawFlowLight() {
+        if (!flowLightOverlay) return;
+        const { ctx } = flowLightOverlay;
+        const rect = canvas.getBoundingClientRect();
+        ctx.clearRect(0, 0, rect.width, rect.height);
 
-            // 每根長條的流光稍微錯開時間，看起來比較有層次，不會整排一起閃
-            const offset = (i * 220) % cycle;
-            const progress = ((now + offset) % cycle) / cycle;
+        const meta = keywordChartInstance && keywordChartInstance.getDatasetMeta(0);
+        if (!meta || !meta.data) return;
+        const now = performance.now();
+        const cycle = 2300; // 流光跑一次全長要多久（毫秒）
 
-            const streakWidth = 92;
-            const streakCenterX = left + progress * (barLen + streakWidth) - streakWidth / 2;
-            const barTop = props.y - props.height / 2;
+        meta.data.forEach((bar, i) => {
+          const props = bar.getProps(['x', 'y', 'base', 'height'], true);
+          const left = Math.min(props.x, props.base);
+          const right = Math.max(props.x, props.base);
+          const barLen = right - left;
+          if (barLen <= 0) return;
 
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(left, barTop, barLen, props.height);
-            ctx.clip();
+          // 每根長條的流光稍微錯開時間，看起來比較有層次，不會整排一起閃
+          const offset = (i * 220) % cycle;
+          const progress = ((now + offset) % cycle) / cycle;
 
-            const grad = ctx.createLinearGradient(streakCenterX - streakWidth / 2, 0, streakCenterX + streakWidth / 2, 0);
-            grad.addColorStop(0, 'rgba(255,255,255,0)');
-            grad.addColorStop(0.5, 'rgba(255,255,255,0.4)');
-            grad.addColorStop(1, 'rgba(255,255,255,0)');
-            ctx.fillStyle = grad;
-            ctx.fillRect(left, barTop, barLen, props.height);
-            ctx.restore();
-          });
-        },
-      };
+          const streakWidth = 92;
+          const streakCenterX = left + progress * (barLen + streakWidth) - streakWidth / 2;
+          const barTop = props.y - props.height / 2;
 
-      const keywordChartInstance = new Chart(canvas, {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(left, barTop, barLen, props.height);
+          ctx.clip();
+
+          const grad = ctx.createLinearGradient(streakCenterX - streakWidth / 2, 0, streakCenterX + streakWidth / 2, 0);
+          grad.addColorStop(0, 'rgba(255,255,255,0)');
+          grad.addColorStop(0.5, 'rgba(255,255,255,0.4)');
+          grad.addColorStop(1, 'rgba(255,255,255,0)');
+          ctx.fillStyle = grad;
+          ctx.fillRect(left, barTop, barLen, props.height);
+          ctx.restore();
+        });
+      }
+
+      keywordChartInstance = new Chart(canvas, {
         type: 'bar',
         data: {
           labels: shown.map(w => w.word),
@@ -3098,12 +3198,12 @@ function renderHtml(dataset) {
             borderRadius: 4,
           }],
         },
-        plugins: [flowLightPlugin],
         options: {
           indexAxis: 'y',
           responsive: true,
           maintainAspectRatio: false,
-          animation: { duration: 700, easing: 'easeOutQuart' },
+          animation: false, // 進場動畫全站關閉，見上方 Chart.defaults.animation 說明
+          onResize: () => { if (flowLightOverlay) flowLightOverlay.resize(); }, // 疊加層尺寸交給Chart.js自己的resize通知來同步，不再自己另外掛ResizeObserver
           scales: {
             x: { ticks: { color: '#9aa0ac', stepSize: 1 }, grid: { color: 'rgba(255,255,255,0.06)' } },
             y: { ticks: { color: '#e8e9ed', autoSkip: false, font: { family: 'JetBrains Mono, monospace' } }, grid: { display: false } },
@@ -3111,7 +3211,7 @@ function renderHtml(dataset) {
           plugins: {
             legend: { display: false },
             tooltip: {
-              animation: { duration: 0 }, // 這張圖有流光效果會持續重繪(chart.draw())，tooltip原本的淡入動畫容易被打斷、卡在半透明看起來很淡，改成不淡入、直接完整顯示
+              animation: { duration: 0 }, // 流光效果已改成畫在獨立疊加canvas（見createEffectOverlay），不再跟這裡的tooltip搶畫布；保留不淡入純粹是喜歡這個顯示效果
               callbacks: {
                 label: (ctx) => '共 ' + ctx.raw + ' 則負評（點擊查看）',
               },
@@ -3131,10 +3231,15 @@ function renderHtml(dataset) {
         },
       });
 
+      // Chart 建立完成、DOM已穩定之後，才建立疊加canvas並插入它的父層容器，
+      // 避免在 Chart.js 初始化/掛內部 ResizeObserver 的過程中去異動同一個容器的 DOM 結構。
+      flowLightOverlay = createEffectOverlay(canvas);
+
       // ===== 動畫迴圈：持續重繪讓流光動起來，分頁切到背景時暫停省資源 =====
+      // 現在只重繪疊加的 flowLightOverlay canvas，完全不碰 keywordChartInstance。
       let flowLightRafId = null;
       function tickFlowLight() {
-        keywordChartInstance.draw();
+        drawFlowLight();
         flowLightRafId = requestAnimationFrame(tickFlowLight);
       }
       document.addEventListener('visibilitychange', () => {
@@ -3245,11 +3350,6 @@ function renderHtml(dataset) {
       openReviewDrawer(cfg.title, '共 ' + reviews.length + ' 則', reviews);
     });
 
-    renderCardGroup(ratingsSummaryEl, [
-      { label: 'Google Play<br>平均星等', value: dataset.androidAvgOverall, cls: 'android', decimals: 2 },
-      { label: 'App Store<br>平均星等', value: dataset.iosAvgOverall, cls: 'ios', decimals: 2 },
-    ]);
-
     // ===== 卡片數字：滾動進入畫面時，從 0 跑到目標值（只觸發一次） =====
     function animateCountUp(el, target, decimals, duration) {
       const startTime = performance.now();
@@ -3296,7 +3396,6 @@ function renderHtml(dataset) {
     }
 
     setupCountAnimation(summaryEl);
-    setupCountAnimation(ratingsSummaryEl);
 
     // ===== 切換到某個分頁時，重播該分頁裡圖表的進場動畫 =====
     // 圖表在頁面載入當下就已經全部建立好、動畫也已經在背景（隱藏狀態）悄悄播完了，
@@ -3306,7 +3405,6 @@ function renderHtml(dataset) {
       comments: ['commentScatterChart', 'wordFrequencyChart'],
       autosummary: ['versionTrendChart', 'painPointsChart', 'trendChangeChart'],
       sentiment: ['categoryChart', 'stageChart', 'matrixChart', 'intentChart'],
-      versionratings: ['versionChart', 'trendChart', 'androidDistChart', 'iosDistChart'],
     };
     function replayTabAnimations(tabKey) {
       if (window.Chart && Chart.instances) {
@@ -4129,54 +4227,6 @@ function renderHtml(dataset) {
     });
 
 
-    // ===== 情緒分析 tab：版本圖（放在「版本」tab） =====
-    if (dataset.versionStats.length > 0) {
-      new Chart(document.getElementById('versionChart'), {
-        type: 'bar',
-        data: {
-          labels: dataset.versionStats.map(v => v.version),
-          datasets: [
-            {
-              type: 'line',
-              label: '平均星等',
-              data: dataset.versionStats.map(v => v.avgScore),
-              borderColor: '#e8e9ed',
-              backgroundColor: 'rgba(232,233,237,0.1)',
-              yAxisID: 'y1',
-              tension: 0.3,
-            },
-            {
-              type: 'bar',
-              label: '評論則數',
-              data: dataset.versionStats.map(v => v.count),
-              backgroundColor: 'rgba(198,242,78,0.5)',
-              yAxisID: 'y',
-            },
-          ],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          scales: {
-            x: { ticks: { color: '#9aa0ac', maxRotation: 60, minRotation: 45 }, grid: { display: false } },
-            y: { position: 'left', title: { display: true, text: '則數', color: '#9aa0ac' }, ticks: { color: '#9aa0ac' }, grid: { color: '#2a2e38' } },
-            y1: { position: 'right', min: 0, max: 5, title: { display: true, text: '平均星等', color: '#9aa0ac' }, ticks: { color: '#9aa0ac' }, grid: { display: false } },
-          },
-          plugins: { legend: { labels: { color: '#e8e9ed' } } },
-          onClick: (evt, elements) => {
-            if (!elements.length) return;
-            const version = dataset.versionStats[elements[0].index].version;
-            const matched = dataset.allReviewsFlat.filter(r => r.platform === 'android' && r.version === version);
-            openReviewDrawer('版本 ' + version, '共 ' + matched.length + ' 則', matched);
-          },
-        },
-      });
-    } else {
-      document.getElementById('versionChart').replaceWith(
-        Object.assign(document.createElement('div'), { className: 'note', textContent: '目前沒有可用的版本資料。' })
-      );
-    }
-
     // ===== 情緒分析 tab：分類細節檢視 =====
     const categorySelect = document.getElementById('categorySelect');
     categorySelect.innerHTML = dataset.categoryOrder.map(c => '<option value="' + c + '">' + c + '</option>').join('');
@@ -4965,7 +5015,7 @@ function renderHtml(dataset) {
           options: {
             responsive: true,
             maintainAspectRatio: false,
-            animation: pointsThenLineAnimation(50),
+            animation: false, // 進場動畫全站關閉（原本用 pointsThenLineAnimation 做逐點長出效果，見上方 Chart.defaults.animation 說明）
             scales: {
               y: { min: 0, max: 5, ticks: { color: '#9aa0ac', font: { size: 10 } }, grid: { color: '#2a2e38' } },
               x: { ticks: { color: '#9aa0ac', font: { size: 9 }, maxRotation: 60, minRotation: 45 }, grid: { display: false } },
@@ -5144,66 +5194,6 @@ function renderHtml(dataset) {
         });
       });
     })();
-
-    // ===== 評分 tab：月平均趨勢 + 星等分佈 =====
-    new Chart(document.getElementById('trendChart'), {
-      type: 'line',
-      data: {
-        labels: dataset.monthlyStats.map(d => d.month),
-        datasets: [
-          {
-            label: 'Google Play 平均星等',
-            data: dataset.monthlyStats.map(d => d.androidAvg),
-            borderColor: '#c6f24e',
-            backgroundColor: 'rgba(198,242,78,0.1)',
-            tension: 0.3,
-            spanGaps: true,
-          },
-          {
-            label: 'App Store 平均星等',
-            data: dataset.monthlyStats.map(d => d.iosAvg),
-            borderColor: '#00DDCD',
-            backgroundColor: 'rgba(0,221,205,0.1)',
-            tension: 0.3,
-            spanGaps: true,
-          },
-        ],
-      },
-      options: {
-          responsive: true,
-          maintainAspectRatio: false,
-        animation: pointsThenLineAnimation(35),
-        scales: {
-          y: { min: 0, max: 5, ticks: { color: '#9aa0ac' }, grid: { color: '#2a2e38' } },
-          x: { ticks: { color: '#9aa0ac', maxRotation: 60, minRotation: 45 }, grid: { color: '#2a2e38' } },
-        },
-        plugins: { legend: { labels: { color: '#e8e9ed' } } },
-      },
-    });
-
-    function distChart(canvasId, dist, color) {
-      new Chart(document.getElementById(canvasId), {
-        type: 'bar',
-        data: {
-          labels: ['1星', '2星', '3星', '4星', '5星'],
-          datasets: [{
-            data: [dist[1], dist[2], dist[3], dist[4], dist[5]],
-            backgroundColor: color,
-          }],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          scales: {
-            y: { ticks: { color: '#9aa0ac' }, grid: { color: '#2a2e38' } },
-            x: { ticks: { color: '#9aa0ac' }, grid: { display: false } },
-          },
-          plugins: { legend: { display: false } },
-        },
-      });
-    }
-    distChart('androidDistChart', dataset.androidDist, '#c6f24e');
-    distChart('iosDistChart', dataset.iosDist, '#00DDCD');
 
     // ===== 所有圖表都建立完成，現在把剛才暫時的「有版面但看不見」樣式清乾淨，
     //      恢復成正常的分頁顯示/隱藏規則（靠 .tab-panel.active 這個 class 控制）=====
