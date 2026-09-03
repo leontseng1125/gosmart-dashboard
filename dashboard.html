@@ -23,6 +23,10 @@
   }
   :root {
     --hud-glow: 198, 242, 78; /* 主色(lime)的RGB，供發光邊框/HUD文字使用；iOS專屬色維持獨立、不混用在這裡 */
+    /* 青綠網格線專用色，數值跟 --ios(#00DDCD) 剛好一樣，但刻意獨立成一個變數：
+       --ios 是「iOS平台識別色」，語意上跟這裡「HUD網格裝飾」是兩件事，
+       分開宣告之後，之後想單獨調網格線濃淡/色相，不會不小心牽動到iOS相關UI的顏色。 */
+    --hud-grid: 0, 221, 205;
   }
   .mono{
     font-family: "JetBrains Mono", "Space Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -451,6 +455,116 @@
     border-radius: 0 0 4px 0;
   }
   .chart-card h2 { font-size: 14px; margin: 0 0 16px; color: var(--muted); font-weight: 500; }
+
+  /* ===== 「近期熱門負評關鍵字」LED Meter（戰術點陣微格）=====
+     每條軌道固定40格微型燈格，命中筆數決定點亮幾格；超過40筆上限時全數點亮，
+     末端5格轉琥珀色代表過載。取代原本的 Chart.js 長條圖，改成純 DOM/CSS 渲染。 */
+  .led-meter {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .led-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    padding: 3px 4px;
+    border-radius: 2px;
+    transition: background 0.15s ease;
+  }
+  @media (hover: hover) {
+    .led-row:hover { background: rgba(255,255,255,0.04); }
+  }
+  .led-label {
+    width: 118px;
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .led-idx {
+    font-family: "JetBrains Mono", "Space Mono", ui-monospace, monospace;
+    font-size: 11px;
+    color: rgb(var(--hud-grid));
+    margin-right: 2px;
+  }
+  .led-slash {
+    font-family: "JetBrains Mono", "Space Mono", ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--muted);
+    margin-right: 5px;
+  }
+  .led-track {
+    display: flex;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+  .led-seg {
+    width: 3px;
+    height: 12px;
+    border-radius: 1px;
+    background: rgba(255,255,255,0.05);
+    opacity: 0;
+    transform: scaleY(0.35);
+    animation: ledSweepIn 0.22s ease forwards;
+    animation-delay: var(--seg-delay, 0ms);
+  }
+  .led-seg.is-active {
+    background: #00FF88;
+    box-shadow: 0 0 6px rgba(0,255,136,0.45);
+    transition: box-shadow 0.2s ease;
+  }
+  .led-seg.is-overload {
+    background: #FFB000;
+    box-shadow: 0 0 6px rgba(255,176,0,0.5);
+    transition: box-shadow 0.2s ease;
+  }
+  @media (hover: hover) {
+    .led-row:hover .led-seg.is-active { box-shadow: 0 0 10px rgba(0,255,136,0.8); }
+    .led-row:hover .led-seg.is-overload { box-shadow: 0 0 10px rgba(255,176,0,0.85); }
+  }
+  @keyframes ledSweepIn {
+    from { opacity: 0; transform: scaleY(0.35); }
+    to { opacity: 1; transform: scaleY(1); }
+  }
+  .led-count {
+    font-family: "JetBrains Mono", "Space Mono", ui-monospace, monospace;
+    font-size: 12px;
+    color: #00FF88;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .led-count.is-overload { color: var(--neg); }
+  .led-scale {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 2px;
+  }
+  .led-scale-spacer { width: 118px; flex-shrink: 0; }
+  .led-scale-track {
+    position: relative;
+    width: 198px;
+    height: 9px;
+    flex-shrink: 0;
+  }
+  .led-scale-track .tick {
+    position: absolute;
+    top: 0;
+    width: 1px;
+  }
+  .led-scale-track .tick.major {
+    height: 8px;
+    background: rgba(var(--hud-grid), 0.4);
+  }
+  .led-scale-track .tick.minor {
+    height: 3px;
+    background: rgba(255,255,255,0.15);
+  }
+
   .h2-note {
     color: var(--muted);
     font-size: 11px;
@@ -478,52 +592,6 @@
   @media (max-width: 900px) {
     .three-col { grid-template-columns: 1fr; }
   }
-  /* ===== 自動摘要：三個詳情區塊，點擊整張卡片可展開成一整欄、其餘兩欄自動下移。
-     用 Flexbox 的 width 百分比做原生 CSS 過渡，而不是硬拉伸再裁切——
-     這樣任何時刻卡片寬度都是容器寬度的某個百分比，數學上不會超出範圍。 ===== */
-  .detail-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 20px;
-  }
-  .detail-card {
-    width: calc(33.333% - 13.34px);
-    transition: width 0.35s ease;
-    flex-shrink: 0;
-  }
-  .detail-grid.expanded-version #versionDetailCard { width: 100%; order: -1; }
-  .detail-grid.expanded-version #painDetailCard,
-  .detail-grid.expanded-version #trendDetailCard { width: calc(50% - 10px); }
-
-  .detail-grid.expanded-pain #painDetailCard { width: 100%; order: -1; }
-  .detail-grid.expanded-pain #versionDetailCard,
-  .detail-grid.expanded-pain #trendDetailCard { width: calc(50% - 10px); }
-
-  .detail-grid.expanded-trend #trendDetailCard { width: 100%; order: -1; }
-  .detail-grid.expanded-trend #versionDetailCard,
-  .detail-grid.expanded-trend #painDetailCard { width: calc(50% - 10px); }
-
-  @media (max-width: 900px) {
-    .detail-grid .detail-card { width: 100% !important; }
-  }
-  .detail-card {
-    cursor: pointer;
-    user-select: none;
-    transition: box-shadow 0.2s ease, border-color 0.2s ease;
-  }
-  .detail-card.is-first { order: -1; }
-  @media (hover: hover) {
-    .detail-card:hover {
-      border-color: #454b58;
-      box-shadow: 0 0 24px rgba(198, 242, 78, 0.15);
-    }
-    .detail-card:hover h2 { color: #C6F24E; transition: color 0.2s ease; }
-  }
-  .detail-card table,
-  .detail-card tr.clickable-row {
-    cursor: pointer;
-  }
-
   /* ===== 回饋洞察：四個區塊，點擊整張卡片可展開成一整欄、其餘三欄自動下移。
      同樣用 Flexbox 的 width 百分比做原生 CSS 過渡，避免超出範圍。 ===== */
   .insight-grid {
@@ -597,6 +665,41 @@
   .insight-highlight.trend { color: #C6F24E; }
   .insight-sub { color: var(--muted); font-size: 12px; line-height: 1.6; }
   .insight-empty { color: var(--muted); font-size: 13px; }
+
+  /* ===== 自動摘要：3 個結構化卡片（What&Where / Change&Health / Context&Action） ===== */
+  .insight-card-v2 h2 { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+  .insight-card-v2 .h2-note { font-size:10px; font-weight:500; color:var(--muted); font-family:"JetBrains Mono", ui-monospace, monospace; letter-spacing:0.03em; }
+
+  .insight-v2-headline { font-size:14px; font-weight:700; color:#C6F24E; line-height:1.5; margin-bottom:12px; }
+  .insight-v2-toplist { display:flex; flex-direction:column; gap:2px; }
+  .insight-v2-item { display:flex; align-items:center; gap:8px; font-size:12px; padding:7px 2px; border-bottom:1px solid var(--border); cursor:pointer; white-space:nowrap; }
+  .insight-v2-item:last-child { border-bottom:none; }
+  .insight-v2-item:hover { background: rgba(255,255,255,0.03); }
+  .insight-v2-item .rank { color:var(--muted); font-family:"JetBrains Mono", ui-monospace, monospace; font-size:11px; flex-shrink:0; width:18px; }
+  .insight-v2-item .item-label { flex:1; overflow:hidden; text-overflow:ellipsis; }
+  .insight-v2-item .item-count { color:var(--muted); font-size:11px; flex-shrink:0; }
+
+  .insight-v2-compare { display:grid; grid-template-columns:1fr 1fr; gap:8px 16px; }
+  @media (max-width:900px) { .insight-v2-compare { grid-template-columns:1fr; } }
+  .insight-v2-compare-col { display:flex; flex-direction:column; gap:2px; }
+  .insight-v2-compare-title { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px; }
+  .insight-v2-metric { display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:12px; padding:6px 0; border-bottom:1px solid var(--border); white-space:nowrap; }
+  .insight-v2-metric:last-child { border-bottom:none; }
+  .insight-v2-metric .metric-label { color:var(--text); overflow:hidden; text-overflow:ellipsis; }
+  .insight-v2-metric .metric-value { font-family:"JetBrains Mono", ui-monospace, monospace; flex-shrink:0; }
+  .insight-v2-metric .metric-delta { font-family:"JetBrains Mono", ui-monospace, monospace; font-weight:700; margin-left:4px; }
+  .insight-v2-metric .metric-delta.up { color:#4ade8f; }
+  .insight-v2-metric .metric-delta.down { color:#ff6b6b; }
+  .insight-v2-metric .metric-delta.flat { color:var(--muted); font-weight:500; }
+
+  .insight-v2-tags { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  .insight-v2-tag { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:999px; background:rgba(198,242,78,0.12); color:#C6F24E; font-size:11px; font-family:"JetBrains Mono", ui-monospace, monospace; cursor:pointer; border:none; }
+  .insight-v2-tag:hover { background:rgba(198,242,78,0.22); }
+  .insight-v2-quote { border-left:2px solid var(--border); padding:8px 12px; margin-bottom:12px; font-size:12px; color:var(--muted); line-height:1.6; font-style:italic; cursor:pointer; }
+  .insight-v2-quote:hover { border-left-color:rgb(var(--hud-glow)); color:var(--text); }
+  .insight-v2-actions { display:flex; flex-direction:column; gap:7px; }
+  .insight-v2-action { font-size:12px; line-height:1.6; padding-left:16px; position:relative; }
+  .insight-v2-action::before { content:'▸'; position:absolute; left:0; color:rgb(var(--hud-glow)); }
   tr.clickable-row { cursor: pointer; }
   @media (hover: hover) {
     tr.clickable-row:hover { background: rgba(255,255,255,0.04); }
@@ -1052,8 +1155,8 @@
         <div class="chart-card" id="keywordChartCard" style="display:flex; flex-direction:column;">
           <h2 style="margin:0 0 2px;">近期熱門負評關鍵字 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">取最近一年（12個月）的負評，用「雙字詞＋三字詞」統計常見詞彙（跟評論tab的字詞頻率排行同一套邏輯）。點擊長條可查看包含該詞的負評。</div></span></h2>
           <div class="note" style="margin:2px 0 10px;">最近一年負評，依出現則數排序（前5名）</div>
-          <div class="chart-container" style="flex:1; min-height:80px;">
-            <canvas id="recentKeywordChart"></canvas>
+          <div class="chart-container" style="flex:1; min-height:220px;">
+            <div id="recentKeywordChart" class="led-meter"></div>
           </div>
         </div>
       </div>
@@ -1143,77 +1246,22 @@
   <div class="tab-panel" id="tab-autosummary">
     <div style="display:flex; align-items:center; gap:6px; margin-bottom:16px;">
       <span class="status-pill status-ok mono">AUTO_SUMMARY</span>
-      <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">以下內容是依規則自動比對數字產生（版本評分落差、負評分類排序、月增減比較），不是 AI 理解語意後寫出來的分析，準確度以此為前提，建議搭配下方「回饋洞察」「版本」交叉確認。</div></span>
+      <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">以下內容是依規則自動比對數字產生（版本評分落差、負評分類排序、月增減比較、健康雷達維度變化），不是 AI 理解語意後寫出來的分析，準確度以此為前提，建議搭配下方「回饋洞察」「服務藍圖」交叉確認。</div></span>
     </div>
 
-    <div class="three-col" style="margin-bottom: 20px;">
-      <div class="chart-card" id="insightCardRegression">
-        <h2>⚠️ 版本異常警告</h2>
-        <div id="insightRegressionBody"></div>
-        <div class="chart-container" style="height:160px; margin-top:12px;">
-          <canvas id="versionTrendChart"></canvas>
-        </div>
+    <div class="three-col">
+      <div class="chart-card insight-card-v2">
+        <h2>🎯 核心問題與痛點定位 <span class="h2-note">WHAT &amp; WHERE</span></h2>
+        <div id="insightWhatWhereBody"></div>
       </div>
-      <div class="chart-card" id="insightCardPain">
-        <h2>🔥 歷史高頻痛點 Top 5</h2>
-        <div id="insightPainBody"></div>
-        <div class="chart-container" style="height:160px; margin-top:12px;">
-          <canvas id="painPointsChart"></canvas>
-        </div>
+      <div class="chart-card insight-card-v2">
+        <h2>📊 趨勢變化與版本健康度 <span class="h2-note">CHANGE &amp; HEALTH</span></h2>
+        <div id="insightChangeHealthBody"></div>
       </div>
-      <div class="chart-card" id="insightCardTrend">
-        <h2>📈 突發趨勢變化</h2>
-        <div class="h2-note">本月 vs 上月</div>
-        <div id="insightTrendBody"></div>
-        <div class="chart-container" style="height:160px; margin-top:12px;">
-          <canvas id="trendChangeChart"></canvas>
-        </div>
-        <div id="trendSparklineRow" style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;"></div>
+      <div class="chart-card insight-card-v2">
+        <h2>🧭 質化脈絡與行動指引 <span class="h2-note">CONTEXT &amp; ACTION</span></h2>
+        <div id="insightContextActionBody"></div>
       </div>
-    </div>
-
-    <div class="detail-grid" id="autoSummaryDetailGrid">
-    <div class="chart-card detail-card" id="versionDetailCard" data-detail-key="version">
-      <h2>版本異常詳情</h2>
-      <div class="h2-note">點擊此區塊可展開查看更多內容</div>
-      <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>版本</th><th>則數</th><th>平均星等</th><th>較前版落差</th><th>疑似原因</th></tr>
-        </thead>
-        <tbody id="versionRegressionTableBody"></tbody>
-      </table>
-      </div>
-      <div class="note">點擊任一列可查看該版本的實際負評內容。</div>
-    </div>
-
-    <div class="chart-card detail-card" id="painDetailCard" data-detail-key="pain">
-      <h2>歷史高頻痛點詳情</h2>
-      <div class="h2-note">點擊此區塊可展開查看更多內容</div>
-      <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>排名</th><th>分類</th><th>負評則數</th><th>總則數</th><th>平均星等</th></tr>
-        </thead>
-        <tbody id="painPointTableBody"></tbody>
-      </table>
-      </div>
-      <div class="note">點擊任一列可查看該分類的負評內容。</div>
-    </div>
-
-    <div class="chart-card detail-card" id="trendDetailCard" data-detail-key="trend">
-      <h2>趨勢變化詳情</h2>
-      <div class="h2-note">點擊此區塊可展開查看更多內容</div>
-      <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>分類</th><th>本月負評</th><th>上月負評</th><th>增加則數</th></tr>
-        </thead>
-        <tbody id="trendChangeTableBody"></tbody>
-      </table>
-      </div>
-      <div class="note">只列出「本月至少 2 則」且比上月增加的分類，避免 1 則的雜訊被誤判成趨勢。點擊任一列可查看本月該分類的負評內容。</div>
-    </div>
     </div>
   </div>
 
@@ -1837,12 +1885,32 @@
       return { canvas: overlay, ctx, resize };
     }
 
-    // ===== LIVE MONITOR：健康雷達圖（意圖分佈4軸 + 版本穩定度1軸） =====
-    (function renderHealthRadar() {
-      const canvas = document.getElementById('healthRadarChart');
-      if (!canvas || !window.Chart) return;
+    // ===== 共用：確保容器已經有實際寬高之後，才執行圖表 init =====
+    // 問題背景：像「近期熱門負評關鍵字」這種放在 flex 版面裡、高度由 JS 事後量測撐開的容器，
+    // 在 script 執行到 new Chart(...) 的當下，容器有可能還沒撐開到最終高度（例如還在等
+    // flex 父層的高度由其他函式設定），這時候 Chart.js 讀到的容器尺寸是 0 或極小值，
+    // 畫出來的圖表就會寬高坍塌、看起來像空白，重新整理後（瀏覽器對CSS的計算時序不同）才會正常。
+    // 這裡用 requestAnimationFrame 輪詢容器實際尺寸，確定「寬高都>0」才呼叫 init()；
+    // 設一個影格數上限（maxFrames）當保險，超過上限還是會強制呼叫一次 init()，
+    // 避免萬一容器真的量不到尺寸（例如整個父層被隱藏）時卡住、永遠不畫圖。
+    function whenContainerSized(el, init, maxFrames = 30) {
+      let frame = 0;
+      function check() {
+        const rect = el.getBoundingClientRect();
+        if ((rect.width > 0 && rect.height > 0) || frame >= maxFrames) {
+          init();
+          return;
+        }
+        frame++;
+        requestAnimationFrame(check);
+      }
+      check();
+    }
 
-      // ===== 依資料的日期範圍中點，切成「本期」／「上期」兩段，讓雷達圖可以疊加對照線 =====
+    // ===== 共用：健康快照（意圖分佈4軸 + 版本穩定度），健康雷達圖跟自動摘要卡片二都要用同一套數字 =====
+    // 依資料的日期範圍中點，切成「本期」／「上期」兩段，供對照趨勢；
+    // 版本穩定度：把版本依序切成前半／後半，各自算「非驟降版本」佔比，當作「上期／本期」的粗略對照。
+    function computeHealthSnapshot() {
       const allReviews = dataset.allReviewsFlat || [];
       const parsedDates = allReviews.map(r => new Date(r.date)).filter(d => !isNaN(d));
       let midDate = null;
@@ -1869,7 +1937,6 @@
       const currentIntent = intentPctFor(currentReviews);
       const previousIntent = intentPctFor(previousReviews);
 
-      // 版本穩定度：把版本依序切成前半／後半，各自算「非驟降版本」佔比，當作「上期／本期」的粗略對照
       const versionAnalysis = dataset.versionAnalysis || [];
       function stabilityFor(list) {
         if (!list.length) return 100;
@@ -1881,6 +1948,16 @@
       const currentVersions = versionAnalysis.slice(halfIdx);
       const currentStability = stabilityFor(currentVersions.length ? currentVersions : versionAnalysis);
       const previousStability = stabilityFor(previousVersions.length ? previousVersions : versionAnalysis);
+
+      return { currentIntent, previousIntent, currentStability, previousStability };
+    }
+
+    // ===== LIVE MONITOR：健康雷達圖（意圖分佈4軸 + 版本穩定度1軸） =====
+    (function renderHealthRadar() {
+      const canvas = document.getElementById('healthRadarChart');
+      if (!canvas || !window.Chart) return;
+
+      const { currentIntent, previousIntent, currentStability, previousStability } = computeHealthSnapshot();
 
       const labels = ['抱怨/bug', '功能請求', '純稱讚', '一般', '版本穩定度'];
       const currentValues = [currentIntent['抱怨/bug'], currentIntent['功能請求'], currentIntent['純稱讚'], currentIntent['一般'], currentStability];
@@ -2230,10 +2307,9 @@
     })();
 
     // ===== LIVE MONITOR：整合告警清單（版本異常＋熱門痛點＋旅程痛點，依負評則數排序） =====
-    (function renderAnomalyList() {
-      const container = document.getElementById('anomalyList');
-      if (!container) return;
-
+    // ===== 共用：整合告警清單的資料組裝（版本異常＋熱門痛點＋旅程痛點，依負評則數排序） =====
+    // LIVE MONITOR 的異常清單、跟自動摘要卡片一都要用同一份「合併排序後」的訊號清單。
+    function computeAnomalyItems() {
       const items = [];
 
       (dataset.versionRegressions || []).forEach((v) => {
@@ -2274,7 +2350,14 @@
       });
 
       items.sort((a, b) => b.count - a.count);
-      const top = items.slice(0, 20);
+      return items;
+    }
+
+    (function renderAnomalyList() {
+      const container = document.getElementById('anomalyList');
+      if (!container) return;
+
+      const top = computeAnomalyItems().slice(0, 20);
 
       container.innerHTML = top.map((item, i) => {
         const severity = i < 3 ? 'critical' : 'warn';
@@ -2292,130 +2375,96 @@
     })();
 
     // ===== LIVE MONITOR：近期熱門負評關鍵字（改用長條圖，取代原本的文字雲呈現） =====
+    // ===== LIVE MONITOR：近期熱門負評關鍵字（戰術點陣 LED Meter，取代原本 Chart.js 長條圖） =====
     (function renderRecentKeywordChart() {
-      const canvas = document.getElementById('recentKeywordChart');
-      if (!canvas || !window.Chart) return;
+      const container = document.getElementById('recentKeywordChart');
+      if (!container) return;
 
       const words = dataset.recentNegativeWordFrequency || [];
       if (!words.length) {
-        canvas.parentElement.innerHTML = '<div class="note">最近一年沒有足夠的負評關鍵字資料</div>';
+        container.innerHTML = '<div class="note">最近一年沒有足夠的負評關鍵字資料</div>';
         return;
       }
 
-      const glowRgb = getComputedStyle(document.documentElement).getPropertyValue('--hud-glow').trim() || '198, 242, 78';
       const shown = words.slice(0, 5); // 移到雷達圖下方後空間變小，改取前5個
+      const CAPACITY = 40; // 每條軌道固定40格
+      const OVERLOAD_TAIL = 5; // 超過上限時，末端幾格轉警示色
 
-      // ===== 流光效果：畫在獨立的疊加 canvas 上（見 createEffectOverlay） =====
-      // 疊加層蓋在圖表 canvas 上面，維持跟原本 afterDatasetsDraw 一樣「流光在長條上方」的視覺順序；
-      // 迴圈只重繪這顆疊加 canvas，完全不再呼叫 keywordChartInstance.draw()。
-      let keywordChartInstance; // drawFlowLight() 會讀取這個變數，先宣告好避免暫時性死區報錯
-      let flowLightOverlay = null; // 建立 Chart 之後才會賦值，避免在 Chart.js 初始化過程中異動它的父層 DOM
+      // 每個燈格用 CSS 變數帶入進場動畫的延遲時間，做出「由左至右逐格點亮」的掃描效果；
+      // 40格全部一起錯開時間太久會顯得拖沓，這裡限制在很短的時間窗內（每格4ms）掃完。
+      function buildTrack(count) {
+        const isOverload = count > CAPACITY;
+        const activeCount = isOverload ? CAPACITY : count;
+        const overloadStart = CAPACITY - OVERLOAD_TAIL;
 
-      function drawFlowLight() {
-        if (!flowLightOverlay) return;
-        const { ctx } = flowLightOverlay;
-        const rect = canvas.getBoundingClientRect();
-        ctx.clearRect(0, 0, rect.width, rect.height);
-
-        const meta = keywordChartInstance && keywordChartInstance.getDatasetMeta(0);
-        if (!meta || !meta.data) return;
-        const now = performance.now();
-        const cycle = 2300; // 流光跑一次全長要多久（毫秒）
-
-        meta.data.forEach((bar, i) => {
-          const props = bar.getProps(['x', 'y', 'base', 'height'], true);
-          const left = Math.min(props.x, props.base);
-          const right = Math.max(props.x, props.base);
-          const barLen = right - left;
-          if (barLen <= 0) return;
-
-          // 每根長條的流光稍微錯開時間，看起來比較有層次，不會整排一起閃
-          const offset = (i * 220) % cycle;
-          const progress = ((now + offset) % cycle) / cycle;
-
-          const streakWidth = 92;
-          const streakCenterX = left + progress * (barLen + streakWidth) - streakWidth / 2;
-          const barTop = props.y - props.height / 2;
-
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(left, barTop, barLen, props.height);
-          ctx.clip();
-
-          const grad = ctx.createLinearGradient(streakCenterX - streakWidth / 2, 0, streakCenterX + streakWidth / 2, 0);
-          grad.addColorStop(0, 'rgba(255,255,255,0)');
-          grad.addColorStop(0.5, 'rgba(255,255,255,0.4)');
-          grad.addColorStop(1, 'rgba(255,255,255,0)');
-          ctx.fillStyle = grad;
-          ctx.fillRect(left, barTop, barLen, props.height);
-          ctx.restore();
-        });
-      }
-
-      keywordChartInstance = new Chart(canvas, {
-        type: 'bar',
-        data: {
-          labels: shown.map(w => w.word),
-          datasets: [{
-            data: shown.map(w => w.count),
-            backgroundColor: 'rgba(' + glowRgb + ', 0.75)',
-            borderRadius: 4,
-          }],
-        },
-        options: {
-          indexAxis: 'y',
-          responsive: true,
-          maintainAspectRatio: false,
-          animation: false, // 進場動畫全站關閉，見上方 Chart.defaults.animation 說明
-          onResize: () => { if (flowLightOverlay) flowLightOverlay.resize(); }, // 疊加層尺寸交給Chart.js自己的resize通知來同步，不再自己另外掛ResizeObserver
-          scales: {
-            x: { ticks: { color: '#9aa0ac', stepSize: 1 }, grid: { color: 'rgba(255,255,255,0.06)' } },
-            y: { ticks: { color: '#e8e9ed', autoSkip: false, font: { family: 'JetBrains Mono, monospace' } }, grid: { display: false } },
-          },
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              animation: { duration: 0 }, // 流光效果已改成畫在獨立疊加canvas（見createEffectOverlay），不再跟這裡的tooltip搶畫布；保留不淡入純粹是喜歡這個顯示效果
-              callbacks: {
-                label: (ctx) => '共 ' + ctx.raw + ' 則負評（點擊查看）',
-              },
-            },
-          },
-          onClick: (evt, elements) => {
-            if (!elements.length) return;
-            const word = shown[elements[0].index].word;
-            const months = dataset.recentMonthsForKeywords || [];
-            // 篩選條件要跟長條圖數字時完全一樣（近半年＋負評），數字才會對得起來，
-            // 不能只篩負評卻不限時間範圍，不然點進去看到的則數一定比長條圖上的數字多。
-            const matched = dataset.allReviewsFlat.filter(r =>
-              r.sentiment === 'negative' && months.includes(r.month) && (r.text || '').includes(word)
-            );
-            openReviewDrawer('「' + word + '」相關負評', '共 ' + matched.length + ' 則', matched);
-          },
-        },
-      });
-
-      // Chart 建立完成、DOM已穩定之後，才建立疊加canvas並插入它的父層容器，
-      // 避免在 Chart.js 初始化/掛內部 ResizeObserver 的過程中去異動同一個容器的 DOM 結構。
-      flowLightOverlay = createEffectOverlay(canvas);
-
-      // ===== 動畫迴圈：持續重繪讓流光動起來，分頁切到背景時暫停省資源 =====
-      // 現在只重繪疊加的 flowLightOverlay canvas，完全不碰 keywordChartInstance。
-      let flowLightRafId = null;
-      function tickFlowLight() {
-        drawFlowLight();
-        flowLightRafId = requestAnimationFrame(tickFlowLight);
-      }
-      document.addEventListener('visibilitychange', () => {
-        if (document.hidden) {
-          if (flowLightRafId) cancelAnimationFrame(flowLightRafId);
-          flowLightRafId = null;
-        } else if (!flowLightRafId) {
-          flowLightRafId = requestAnimationFrame(tickFlowLight);
+        let html = '';
+        for (let i = 0; i < CAPACITY; i++) {
+          let cls = 'led-seg';
+          if (i < activeCount) {
+            cls += (isOverload && i >= overloadStart) ? ' is-overload' : ' is-active';
+          }
+          html += '<span class="' + cls + '" style="--seg-delay:' + (i * 4) + 'ms"></span>';
         }
+        return { html, isOverload };
+      }
+
+      // 底部刻度：每10格一個較亮的主刻度，每5格一個較淡的次刻度，純視覺，不帶數字。
+      // 40格、每格間距(3px寬+2px間隙)=5px，第 n 格左緣位置＝ n*5px。
+      function buildScaleTicks() {
+        let ticks = '';
+        for (let n = 0; n <= CAPACITY; n += 5) {
+          const isMajor = n % 10 === 0;
+          const left = Math.min(n * 5, CAPACITY * 5 - 1);
+          ticks += '<span class="tick ' + (isMajor ? 'major' : 'minor') + '" style="left:' + left + 'px"></span>';
+        }
+        return ticks;
+      }
+
+      const rowsHtml = shown.map((w, i) => {
+        const { html: trackHtml, isOverload } = buildTrack(w.count);
+        const idx = String(i + 1).padStart(2, '0');
+        const countLabel = isOverload ? ('[ ' + w.count + '! ]') : ('[ ' + w.count + ' 則 ]');
+        return (
+          '<div class="led-row" data-word-index="' + i + '" role="button" tabindex="0">' +
+            '<div class="led-label" title="' + w.word + '">' +
+              '<span class="led-idx">' + idx + '</span><span class="led-slash">//</span>' + w.word +
+            '</div>' +
+            '<div class="led-track">' + trackHtml + '</div>' +
+            '<div class="led-count' + (isOverload ? ' is-overload' : '') + '">' + countLabel + '</div>' +
+          '</div>'
+        );
+      }).join('');
+
+      const scaleHtml =
+        '<div class="led-scale">' +
+          '<div class="led-scale-spacer"></div>' +
+          '<div class="led-scale-track">' + buildScaleTicks() + '</div>' +
+        '</div>';
+
+      container.innerHTML = rowsHtml + scaleHtml;
+
+      // 點擊某一列＝查看該關鍵字相關負評，篩選條件要跟數字來源完全一致（近一年＋負評），
+      // 不能只篩負評卻不限時間範圍，不然點進去看到的則數會比燈格代表的數字多。
+      function openWordDrawer(word) {
+        const months = dataset.recentMonthsForKeywords || [];
+        const matched = dataset.allReviewsFlat.filter(r =>
+          r.sentiment === 'negative' && months.includes(r.month) && (r.text || '').includes(word)
+        );
+        openReviewDrawer('「' + word + '」相關負評', '共 ' + matched.length + ' 則', matched);
+      }
+
+      container.querySelectorAll('.led-row').forEach((row) => {
+        const word = shown[Number(row.dataset.wordIndex)].word;
+        row.addEventListener('click', () => openWordDrawer(word));
+        row.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openWordDrawer(word);
+          }
+        });
       });
-      flowLightRafId = requestAnimationFrame(tickFlowLight);
     })();
+
 
     // ===== LIVE MONITOR：讓右欄（系統異常清單）的底部，精準對齊左欄（KPI＋平台佔比）的底部 =====
     // 不依賴CSS Grid的align-items:stretch（不同瀏覽器對「grid item裡面還是flex容器」這種巢狀情境
@@ -2465,10 +2514,6 @@
 
       if (targetHeight > 0) {
         card.style.height = Math.max(targetHeight, minHeight) + 'px';
-        if (window.Chart) {
-          const chartInstance = Chart.getChart('recentKeywordChart');
-          if (chartInstance) chartInstance.resize();
-        }
       }
     }
 
@@ -2478,6 +2523,14 @@
       syncKeywordCardHeight();
     }));
     window.addEventListener('resize', () => {
+      syncLiveColumnHeights();
+      syncKeywordCardHeight();
+    });
+    // 額外保險：等 window 的 load 事件（字型、圖片等外部資源都真正載入完成）之後，
+    // 再量一次高度、觸發一次圖表 resize()。雙 requestAnimationFrame 通常已經足夠，
+    // 但如果容器尺寸因為外部資源（例如自訂字型換臉造成的 reflow）在那之後才穩定，
+    // 這裡補一次可以避免極端情況下第一次打開仍然量到不準的高度。
+    window.addEventListener('load', () => {
       syncLiveColumnHeights();
       syncKeywordCardHeight();
     });
@@ -2567,7 +2620,6 @@
     // 在「真正切過去、看得到的那一刻」重新播放一次進場動畫；純點點淡入的圖表另外重播 CSS 淡入。
     const TAB_CHART_IDS = {
       comments: ['commentScatterChart', 'wordFrequencyChart'],
-      autosummary: ['versionTrendChart', 'painPointsChart', 'trendChangeChart'],
       sentiment: ['categoryChart', 'stageChart', 'matrixChart', 'intentChart'],
     };
     function replayTabAnimations(tabKey) {
@@ -2576,7 +2628,7 @@
         Object.values(Chart.instances).forEach((c) => {
           const canvasId = c.canvas && c.canvas.id;
           if (!canvasId) return;
-          const belongsToTab = idsForTab.includes(canvasId) || (tabKey === 'autosummary' && canvasId.indexOf('sparkline-') === 0);
+          const belongsToTab = idsForTab.includes(canvasId);
           if (!belongsToTab) return;
           try {
             c.reset();
@@ -4039,325 +4091,147 @@
       const regressions = dataset.versionRegressions || [];
       const painPoints = dataset.topPainPoints || [];
       const trends = dataset.trendChanges || [];
+      const monthly = dataset.monthlyStats || [];
+      const anomalyItems = computeAnomalyItems();
+      const { currentIntent, previousIntent, currentStability, previousStability } = computeHealthSnapshot();
 
-      const CATEGORY_ICONS = {
-        '定車相關': '🗓️', '取車相關': '🔑', '還車相關': '🚗', '客服': '🎧',
-        '審核': '📋', '付款': '💳', '站點與車輛數': '📍', '停權': '🚫',
-        '基本資料': '🪪', '系統': '⚙️', '車輛設備': '🔧', '優惠碼/優惠券': '🎟️',
-        '帳號': '👤', '車損拍照': '📸', '通知': '🔔', '軟體更新': '🔄',
-        'icon設計': '🎨', '投保': '🛡️', '搜尋': '🔍', '更改密碼': '🔒',
-        '共同承租人': '👥', '其他': '📦',
-      };
-      const iconFor = (cat) => CATEGORY_ICONS[cat] || '📌';
-
-      // --- 卡片一：版本異常警告 ---
-      const regressionBody = document.getElementById('insightRegressionBody');
-      if (regressions.length === 0) {
-        regressionBody.innerHTML = '<div class="insight-empty">目前沒有偵測到明顯的版本評分驟降。</div>';
-      } else {
-        const top = regressions[0];
-        regressionBody.innerHTML =
-          '<div class="insight-highlight warn">版本 ' + top.version + '</div>' +
-          '<div class="insight-sub">平均星等較前一版下降 ' + top.scoreDrop.toFixed(2) + ' 分（' + top.avgScore.toFixed(2) + ' ★，共 ' + top.count + ' 則）' +
-          (top.topCats.length ? '，主要負評類型：' + top.topCats.join('、') : '') + '</div>' +
-          (regressions.length > 1 ? '<div class="insight-sub" style="margin-top:6px;">另外還有 ' + (regressions.length - 1) + ' 個版本也被標記，詳見下方表格。</div>' : '');
+      // 數值差異的顯示小工具：正負號、顏色（漲跌對「好壞」的意義由呼叫端用 higherIsBad 指定）
+      function fmtDelta(curr, prev, opts) {
+        opts = opts || {};
+        if (curr == null || prev == null) return '<span class="metric-delta flat">—</span>';
+        const decimals = opts.decimals != null ? opts.decimals : 0;
+        const d = curr - prev;
+        const rounded = Number(d.toFixed(decimals));
+        const sign = rounded > 0 ? '+' : '';
+        const cls = rounded === 0 ? 'flat' : (rounded > 0) === !!opts.higherIsBad ? 'down' : 'up';
+        return '<span class="metric-delta ' + cls + '">' + sign + rounded.toFixed(decimals) + (opts.suffix || '') + '</span>';
       }
 
-      // --- 卡片二：歷史高頻痛點 ---
-      const painBody = document.getElementById('insightPainBody');
-      if (painPoints.length === 0) {
-        painBody.innerHTML = '<div class="insight-empty">目前沒有足夠資料歸納出痛點排行。</div>';
-      } else {
-        const top = painPoints[0];
-        painBody.innerHTML =
-          '<div class="insight-highlight hot">' + top.category + '</div>' +
-          '<div class="insight-sub">歷史累積 ' + top.negativeCount + ' 則負評（平均 ' + top.avgScore.toFixed(2) + ' ★），是目前最該優先排入 Roadmap 的問題。</div>' +
-          '<div class="insight-sub" style="margin-top:6px;">Top 5：' + painPoints.map(p => p.category).join('、') + '</div>';
-      }
-
-      // --- 卡片三：突發趨勢變化 ---
-      const trendBody = document.getElementById('insightTrendBody');
-      if (trends.length === 0) {
-        trendBody.innerHTML = '<div class="insight-empty">本月跟上月相比，沒有偵測到明顯增加的負評類型。</div>';
-      } else {
-        const top = trends[0];
-        trendBody.innerHTML =
-          '<div class="insight-highlight trend">' + top.category + ' +' + top.delta + '</div>' +
-          '<div class="insight-sub">本月已有 ' + top.thisMonthNeg + ' 則負評（上月 ' + top.lastMonthNeg + ' 則），是本月新浮現或惡化的方向。</div>' +
-          (trends.length > 1 ? '<div class="insight-sub" style="margin-top:6px;">其他上升類型：' + trends.slice(1).map(t => t.category + ' +' + t.delta).join('、') + '</div>' : '');
-      }
-
-      // --- 詳情表格：版本異常 ---
-      const versionTbody = document.getElementById('versionRegressionTableBody');
-      if (regressions.length === 0) {
-        versionTbody.innerHTML = '<tr><td colspan="5" class="insight-empty">目前沒有被標記的版本。</td></tr>';
-      } else {
-        versionTbody.innerHTML = regressions.map(v => `
-          <tr class="clickable-row" data-version="${v.version}">
-            <td>${v.version}</td>
-            <td>${v.count}</td>
-            <td class="score-neg">${v.avgScore.toFixed(2)} ★</td>
-            <td class="score-neg">-${v.scoreDrop.toFixed(2)}</td>
-            <td>${v.topCats.join('、') || '-'}</td>
-          </tr>
-        `).join('');
-        versionTbody.querySelectorAll('tr[data-version]').forEach(row => {
-          row.addEventListener('click', () => {
-            const version = row.dataset.version;
-            const matched = dataset.allReviewsFlat.filter(r => r.platform === 'android' && r.version === version && r.sentiment === 'negative');
-            openReviewDrawer('版本 ' + version + ' 的負評', '共 ' + matched.length + ' 則', matched);
-          });
-        });
-      }
-
-      // --- 詳情表格：高頻痛點（預設 Top 5，展開卡片後改列出 Top 16） ---
-      const painTbody = document.getElementById('painPointTableBody');
-      function renderPainPointTable(list) {
-        if (list.length === 0) {
-          painTbody.innerHTML = '<tr><td colspan="5" class="insight-empty">目前沒有資料。</td></tr>';
-          return;
-        }
-        painTbody.innerHTML = list.map((p, idx) => `
-          <tr class="clickable-row" data-category="${p.category}">
-            <td>#${idx + 1}</td>
-            <td>${iconFor(p.category)} ${p.category}</td>
-            <td class="score-neg">${p.negativeCount}</td>
-            <td>${p.totalCount}</td>
-            <td>${p.avgScore !== null ? p.avgScore.toFixed(2) + ' ★' : '-'}</td>
-          </tr>
-        `).join('');
-        painTbody.querySelectorAll('tr[data-category]').forEach(row => {
-          row.addEventListener('click', () => {
-            const category = row.dataset.category;
-            const matched = dataset.allReviewsFlat.filter(r => r.categories.includes(category) && r.sentiment === 'negative');
-            openReviewDrawer(category + ' 的歷史負評', '共 ' + matched.length + ' 則', matched);
-          });
-        });
-      }
-      renderPainPointTable(painPoints);
-
-      // --- 詳情表格：趨勢變化 ---
-      const trendTbody = document.getElementById('trendChangeTableBody');
-      if (trends.length === 0) {
-        trendTbody.innerHTML = '<tr><td colspan="4" class="insight-empty">目前沒有偵測到明顯趨勢。</td></tr>';
-      } else {
-        trendTbody.innerHTML = trends.map(t => `
-          <tr class="clickable-row" data-category="${t.category}">
-            <td>${iconFor(t.category)} ${t.category}</td>
-            <td class="score-neg">${t.thisMonthNeg}</td>
-            <td>${t.lastMonthNeg}</td>
-            <td class="score-neg">+${t.delta}</td>
-          </tr>
-        `).join('');
-        trendTbody.querySelectorAll('tr[data-category]').forEach(row => {
-          row.addEventListener('click', () => {
-            const category = row.dataset.category;
-            const matched = dataset.reviewsByRange.month.filter(r => r.categories.includes(category) && r.sentiment === 'negative');
-            openReviewDrawer(category + '（本月）', '共 ' + matched.length + ' 則', matched);
-          });
-        });
-      }
-
-      // --- 圖表一：版本 × 平均星等 折線圖（異常版本用紅點標示） ---
-      const versionAnalysis = dataset.versionAnalysis || [];
-      if (versionAnalysis.length > 0) {
-        new Chart(document.getElementById('versionTrendChart'), {
-          type: 'line',
-          data: {
-            labels: versionAnalysis.map(v => v.version),
-            datasets: [{
-              label: '平均星等',
-              data: versionAnalysis.map(v => v.avgScore),
-              borderColor: '#C6F24E',
-              backgroundColor: 'rgba(198,242,78,0.08)',
-              tension: 0.3,
-              pointRadius: versionAnalysis.map(v => v.isRegression ? 6 : 3),
-              pointBackgroundColor: versionAnalysis.map(v => v.isRegression ? '#ff6b6b' : '#C6F24E'),
-              pointBorderColor: versionAnalysis.map(v => v.isRegression ? '#ff6b6b' : '#C6F24E'),
-            }],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: false, // 進場動畫全站關閉（原本用 pointsThenLineAnimation 做逐點長出效果，見上方 Chart.defaults.animation 說明）
-            scales: {
-              y: { min: 0, max: 5, ticks: { color: '#9aa0ac', font: { size: 10 } }, grid: { color: '#2a2e38' } },
-              x: { ticks: { color: '#9aa0ac', font: { size: 9 }, maxRotation: 60, minRotation: 45 }, grid: { display: false } },
-            },
-            plugins: {
-              legend: { display: false },
-              tooltip: {
-                callbacks: {
-                  label: (ctx) => {
-                    const v = versionAnalysis[ctx.dataIndex];
-                    const lines = ['平均 ' + v.avgScore.toFixed(2) + ' ★（' + v.count + ' 則）'];
-                    if (v.isRegression) lines.push('⚠️ 較前版下降 ' + v.scoreDrop.toFixed(2) + ' 分');
-                    return lines;
-                  },
-                },
-              },
-            },
-            onClick: (evt, elements) => {
-              if (!elements.length) return;
-              const v = versionAnalysis[elements[0].index];
-              const matched = dataset.allReviewsFlat.filter(r => r.platform === 'android' && r.version === v.version);
-              openReviewDrawer('版本 ' + v.version, '共 ' + matched.length + ' 則', matched);
-            },
-          },
-        });
-      }
-
-      // --- 圖表二：歷史高頻痛點 橫向長條圖 ---
-      if (painPoints.length > 0) {
-        new Chart(document.getElementById('painPointsChart'), {
-          type: 'bar',
-          data: {
-            labels: painPoints.map(p => iconFor(p.category) + ' ' + p.category),
-            datasets: [{
-              data: painPoints.map(p => p.negativeCount),
-              backgroundColor: painPoints.map((p, i) => i === 0 ? '#C6F24E' : 'rgba(198,242,78,' + (0.85 - i * 0.12) + ')'),
-            }],
-          },
-          options: {
-            indexAxis: 'y',
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-              x: { ticks: { color: '#9aa0ac', font: { size: 10 } }, grid: { color: '#2a2e38' } },
-              y: { ticks: { color: '#9aa0ac', font: { size: 11 } }, grid: { display: false } },
-            },
-            plugins: { legend: { display: false } },
-            onClick: (evt, elements) => {
-              if (!elements.length) return;
-              const p = painPoints[elements[0].index];
-              const matched = dataset.allReviewsFlat.filter(r => r.categories.includes(p.category) && r.sentiment === 'negative');
-              openReviewDrawer(p.category + ' 的歷史負評', '共 ' + matched.length + ' 則', matched);
-            },
-          },
-        });
-      }
-
-      // --- 圖表三：本月 vs 上月 對比長條圖 ---
-      if (trends.length > 0) {
-        new Chart(document.getElementById('trendChangeChart'), {
-          type: 'bar',
-          data: {
-            labels: trends.map(t => t.category),
-            datasets: [
-              { label: '上月', data: trends.map(t => t.lastMonthNeg), backgroundColor: '#5b6272' },
-              { label: '本月', data: trends.map(t => t.thisMonthNeg), backgroundColor: '#C6F24E' },
-            ],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-              x: { ticks: { color: '#9aa0ac', font: { size: 10 } }, grid: { display: false } },
-              y: { ticks: { color: '#9aa0ac', font: { size: 10 } }, grid: { color: '#2a2e38' } },
-            },
-            plugins: { legend: { labels: { color: '#e8e9ed', font: { size: 10 } } } },
-            onClick: (evt, elements) => {
-              if (!elements.length) return;
-              const t = trends[elements[0].index];
-              const matched = dataset.reviewsByRange.month.filter(r => r.categories.includes(t.category) && r.sentiment === 'negative');
-              openReviewDrawer(t.category + '（本月）', '共 ' + matched.length + ' 則', matched);
-            },
-          },
-        });
-      }
-
-      // --- 圖表四：每個上升分類的近 6 個月迷你走勢線（sparkline） ---
-      const sparklineRow = document.getElementById('trendSparklineRow');
-      if (trends.length > 0 && dataset.recentMonths6) {
-        const months6 = dataset.recentMonths6;
-        sparklineRow.innerHTML = trends.map((t, i) =>
-          '<div style="flex:1; min-width:110px; background:#0f1115; border:1px solid #2a2e38; border-radius:8px; padding:8px;">' +
-            '<div style="font-size:11px; color:#9aa0ac; margin-bottom:4px;">' + iconFor(t.category) + ' ' + t.category + '</div>' +
-            '<div style="position:relative; width:100%; height:44px;"><canvas id="sparkline-' + i + '"></canvas></div>' +
-          '</div>'
-        ).join('');
-
-        trends.forEach((t, i) => {
-          new Chart(document.getElementById('sparkline-' + i), {
-            type: 'line',
-            data: {
-              labels: months6,
-              datasets: [{
-                data: t.sparkline,
-                borderColor: '#C6F24E',
-                backgroundColor: 'rgba(198,242,78,0.15)',
-                fill: true,
-                tension: 0.35,
-                pointRadius: 0,
-                borderWidth: 2,
-              }],
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              scales: { x: { display: false }, y: { display: false, min: 0 } },
-              plugins: {
-                legend: { display: false },
-                tooltip: {
-                  callbacks: {
-                    title: (items) => months6[items[0].dataIndex],
-                    label: (ctx) => ctx.parsed.y + ' 則負評',
-                  },
-                },
-              },
-            },
-          });
-        });
-      } else {
-        sparklineRow.innerHTML = '';
-      }
-
-      // --- 三個詳情區塊：點擊整張卡片展開成一整欄，其餘兩欄自動下移。
-      //     版面切換純粹靠 CSS 的 width 過渡完成（見上方 .detail-grid 樣式）。 ---
-      const detailGrid = document.getElementById('autoSummaryDetailGrid');
-
-      function resizeAllChartsInDetailGrid() {
-        if (window.Chart && Chart.instances) {
-          Object.values(Chart.instances).forEach(c => {
-            try { c.resize(); } catch (e) {}
+      // ===== 卡片一：核心問題與痛點定位（What & Where） =====
+      // 直接沿用 LIVE MONITOR 異常清單那套「版本異常＋歷史痛點＋旅程痛點」合併排序後的訊號，
+      // 取最前面的 1 則當作一行結論，接著列出 Top 3。
+      const whatWhereBody = document.getElementById('insightWhatWhereBody');
+      if (whatWhereBody) {
+        if (anomalyItems.length === 0) {
+          whatWhereBody.innerHTML = '<div class="insight-empty">目前沒有偵測到明顯的異常或痛點。</div>';
+        } else {
+          const top3 = anomalyItems.slice(0, 3);
+          whatWhereBody.innerHTML =
+            '<div class="insight-v2-headline">「' + top3[0].label + '」為本期最大阻塞點（' + top3[0].count + ' 則負評）</div>' +
+            '<div class="insight-v2-toplist">' +
+              top3.map((item, i) =>
+                '<div class="insight-v2-item" data-idx="' + i + '">' +
+                  '<span class="rank">#' + (i + 1) + '</span>' +
+                  '<span class="item-label">[' + item.typeShort + '] ' + item.label + '</span>' +
+                  '<span class="item-count">' + item.count + ' 則</span>' +
+                '</div>'
+              ).join('') +
+            '</div>';
+          whatWhereBody.querySelectorAll('.insight-v2-item').forEach((el) => {
+            el.addEventListener('click', () => top3[+el.dataset.idx].onClick());
           });
         }
       }
 
-      const detailCardsList = document.querySelectorAll('.detail-card');
+      // ===== 卡片二：趨勢變化與版本健康度（Change & Health） =====
+      // 左欄：健康雷達的意圖分佈跟版本穩定度（本期 vs 上期，跟雷達圖同一份數字）。
+      // 右欄：目前被標記異常的版本評分變化 + Android／iOS 最近一個月 vs 上個月的平均星等。
+      const changeHealthBody = document.getElementById('insightChangeHealthBody');
+      if (changeHealthBody) {
+        const lastMonth = monthly[monthly.length - 1] || {};
+        const prevMonth = monthly[monthly.length - 2] || {};
 
-      // 監聽每張卡片自己的 CSS width 過渡動畫「真正結束」的那一刻才校正圖表尺寸，
-      // 不用猜時間，避免在較慢裝置/網路下校正到動畫途中的錯誤尺寸。
-      detailCardsList.forEach(card => {
-        card.addEventListener('transitionend', (e) => {
-          if (e.propertyName === 'width') {
-            resizeAllChartsInDetailGrid();
+        const versionRow = regressions.length
+          ? ('<div class="insight-v2-metric"><span class="metric-label">v' + regressions[0].version + ' 平均星等</span>' +
+             '<span class="metric-value">' + regressions[0].avgScore.toFixed(2) + ' ★' +
+             fmtDelta(regressions[0].avgScore, regressions[0].prevAvgScore, { decimals: 2, higherIsBad: false }) + '</span></div>')
+          : '<div class="insight-v2-metric"><span class="metric-label">版本評分</span><span class="metric-value metric-delta flat">近期無明顯驟降版本</span></div>';
+
+        changeHealthBody.innerHTML =
+          '<div class="insight-v2-compare">' +
+            '<div class="insight-v2-compare-col">' +
+              '<div class="insight-v2-compare-title">健康雷達（本期 vs 上期）</div>' +
+              '<div class="insight-v2-metric"><span class="metric-label">抱怨/bug 佔比</span><span class="metric-value">' + currentIntent['抱怨/bug'] + '%' + fmtDelta(currentIntent['抱怨/bug'], previousIntent['抱怨/bug'], { suffix: 'pt', higherIsBad: true }) + '</span></div>' +
+              '<div class="insight-v2-metric"><span class="metric-label">純稱讚佔比</span><span class="metric-value">' + currentIntent['純稱讚'] + '%' + fmtDelta(currentIntent['純稱讚'], previousIntent['純稱讚'], { suffix: 'pt', higherIsBad: false }) + '</span></div>' +
+              '<div class="insight-v2-metric"><span class="metric-label">功能請求佔比</span><span class="metric-value">' + currentIntent['功能請求'] + '%' + fmtDelta(currentIntent['功能請求'], previousIntent['功能請求'], { suffix: 'pt', higherIsBad: false }) + '</span></div>' +
+              '<div class="insight-v2-metric"><span class="metric-label">版本穩定度</span><span class="metric-value">' + currentStability + '%' + fmtDelta(currentStability, previousStability, { suffix: 'pt', higherIsBad: false }) + '</span></div>' +
+            '</div>' +
+            '<div class="insight-v2-compare-col">' +
+              '<div class="insight-v2-compare-title">版本與雙平台（本月 vs 上月）</div>' +
+              versionRow +
+              '<div class="insight-v2-metric"><span class="metric-label">Google Play 平均星等</span><span class="metric-value">' + (lastMonth.androidAvg != null ? lastMonth.androidAvg.toFixed(2) : '-') + ' ★' + fmtDelta(lastMonth.androidAvg, prevMonth.androidAvg, { decimals: 2, higherIsBad: false }) + '</span></div>' +
+              '<div class="insight-v2-metric"><span class="metric-label">App Store 平均星等</span><span class="metric-value">' + (lastMonth.iosAvg != null ? lastMonth.iosAvg.toFixed(2) : '-') + ' ★' + fmtDelta(lastMonth.iosAvg, prevMonth.iosAvg, { decimals: 2, higherIsBad: false }) + '</span></div>' +
+            '</div>' +
+          '</div>';
+
+        changeHealthBody.querySelectorAll('.insight-v2-metric').forEach((el, idx) => {
+          if (idx === 4 && regressions.length) { // 右欄第一列＝版本評分那一列，點擊可查看該版本負評
+            el.style.cursor = 'pointer';
+            el.addEventListener('click', () => {
+              const v = regressions[0];
+              const matched = dataset.allReviewsFlat.filter(r => r.platform === 'android' && r.version === v.version && r.sentiment === 'negative');
+              openReviewDrawer('v' + v.version + ' 的負評', '共 ' + matched.length + ' 則', matched);
+            });
           }
         });
-      });
+      }
 
-      detailCardsList.forEach(card => {
-        card.addEventListener('click', (e) => {
-          // 點在資料列（會跳出評論抽屜）上時，不要同時觸發整張卡片的展開/收合
-          if (e.target.closest('tr.clickable-row')) return;
+      // ===== 卡片三：質化脈絡與行動指引（Context & Action） =====
+      // 標籤＝近期熱門負評關鍵字；摘錄＝從「歷史最高頻痛點分類」裡挑一則最新的實際負評當代表；
+      // 行動建議＝從卡片一/二用到的同一批訊號裡各挑最顯著的一項，用固定模板組成 2~3 點建議
+      // （這整個 tab 本來就是規則式產生，不是語意分析，行動建議也維持同樣的規則式風格）。
+      const contextActionBody = document.getElementById('insightContextActionBody');
+      if (contextActionBody) {
+        const keywords = (dataset.recentNegativeWordFrequency || []).slice(0, 6);
+        const topCategory = painPoints[0] || null;
+        let quoteReview = null;
+        if (topCategory) {
+          const candidates = dataset.allReviewsFlat
+            .filter(r => r.categories.includes(topCategory.category) && r.sentiment === 'negative' && (r.text || '').trim().length > 10)
+            .sort((a, b) => b.timestamp - a.timestamp);
+          quoteReview = candidates[0] || null;
+        }
 
-          const key = card.dataset.detailKey;
-          const expandedClass = 'expanded-' + key;
-          if (detailGrid.classList.contains(expandedClass)) {
-            detailGrid.className = 'detail-grid'; // 再點一次已展開的卡片 → 收合回三欄
-            card.classList.remove('is-first');
-          } else {
-            detailGrid.className = 'detail-grid ' + expandedClass;
-            detailCardsList.forEach(c => c.classList.remove('is-first'));
-            card.classList.add('is-first');
-          }
-          // 「歷史高頻痛點詳情」展開時列出 Top 16，收合（或切到其他卡片展開）時維持 Top 5
-          renderPainPointTable(detailGrid.classList.contains('expanded-pain') ? (dataset.topPainPoints16 || painPoints) : painPoints);
-          // 保險：萬一某些瀏覽器沒有正確觸發 transitionend，額外用一個較長的備援延遲也校正一次。
-          setTimeout(resizeAllChartsInDetailGrid, 500);
+        const actionItems = [];
+        if (anomalyItems[0]) actionItems.push('優先處理「' + anomalyItems[0].label + '」，本期已累積 ' + anomalyItems[0].count + ' 則負評');
+        if (regressions[0]) actionItems.push('檢視 v' + regressions[0].version + ' 版本改動，平均星等較前版下降 ' + regressions[0].scoreDrop.toFixed(2) + ' 分');
+        if (trends[0]) actionItems.push('留意「' + trends[0].category + '」本月負評增加 ' + trends[0].delta + ' 則，建議追蹤是否為新浮現問題');
+        if (actionItems.length === 0) actionItems.push('目前沒有偵測到需要優先處理的明顯訊號，維持現有觀察頻率即可。');
+
+        contextActionBody.innerHTML =
+          '<div class="insight-v2-tags">' +
+            (keywords.length
+              ? keywords.map(k => '<button type="button" class="insight-v2-tag" data-word="' + k.word + '">#' + k.word + ' ' + k.count + '</button>').join('')
+              : '<span class="insight-empty">近期沒有足夠的關鍵字資料</span>') +
+          '</div>' +
+          (quoteReview
+            ? ('<div class="insight-v2-quote" id="insightContextQuoteEl">「' + (quoteReview.text || '').slice(0, 100) + ((quoteReview.text || '').length > 100 ? '…' : '') + '」' +
+               '<div class="insight-sub" style="margin-top:4px; font-style:normal;">— ' + (quoteReview.platform === 'android' ? 'Android' : 'iOS') + '／' + quoteReview.score + ' ★／' + topCategory.category + '</div></div>')
+            : '') +
+          '<div class="insight-v2-actions">' + actionItems.map(a => '<div class="insight-v2-action">' + a + '</div>').join('') + '</div>';
+
+        contextActionBody.querySelectorAll('.insight-v2-tag').forEach((tag) => {
+          tag.addEventListener('click', () => {
+            const word = tag.dataset.word;
+            const months = dataset.recentMonthsForKeywords || [];
+            const matched = dataset.allReviewsFlat.filter(r =>
+              r.sentiment === 'negative' && months.includes(r.month) && (r.text || '').includes(word)
+            );
+            openReviewDrawer('「' + word + '」相關負評', '共 ' + matched.length + ' 則', matched);
+          });
         });
-      });
+
+        if (quoteReview) {
+          const quoteEl = document.getElementById('insightContextQuoteEl');
+          if (quoteEl) {
+            quoteEl.addEventListener('click', () => {
+              openReviewDrawer(topCategory.category + ' 的代表性負評', '共 1 則', [quoteReview]);
+            });
+          }
+        }
+      }
     })();
+
 
     // ===== 所有圖表都建立完成，現在把剛才暫時的「有版面但看不見」樣式清乾淨，
     //      恢復成正常的分頁顯示/隱藏規則（靠 .tab-panel.active 這個 class 控制）=====
