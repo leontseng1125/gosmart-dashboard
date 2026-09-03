@@ -1179,6 +1179,15 @@ function renderHtml(dataset) {
     background: rgba(var(--hud-glow), 0.15);
     box-shadow: 0 0 15px rgba(var(--hud-glow), 0.15);
   }
+  /* 「收藏」獨立出來放在三大按鈕右邊，但比重要比它們小一號，不是等寬的第四個分組 */
+  .group-btn.group-btn-mini{
+    flex: 0 0 auto;
+    min-width: 0;
+    padding: 14px 16px;
+  }
+  .group-btn-mini .group-icon{ font-size:18px; }
+  .group-btn-mini .group-title{ font-size:11px; }
+  .group-btn-mini .group-subtitle{ font-size:11px; }
   .group-icon{ font-size:22px; line-height:1; flex-shrink:0; }
   .group-text{ display:flex; flex-direction:column; gap:2px; }
   .group-title{
@@ -1876,6 +1885,10 @@ function renderHtml(dataset) {
       <span class="group-icon">🗺️</span>
       <span class="group-text"><span class="group-title">JOURNEY BLUEPRINT</span><span class="group-subtitle">服務藍圖</span></span>
     </button>
+    <button class="group-btn group-btn-mini" data-group="favorites">
+      <span class="group-icon">⭐</span>
+      <span class="group-text"><span class="group-title">FAVORITES</span><span class="group-subtitle">收藏</span></span>
+    </button>
   </div>
 
   <div class="group-panel active" id="group-live">
@@ -1924,7 +1937,6 @@ function renderHtml(dataset) {
     <button class="tab-btn active" data-tab="comments">評論</button>
     <button class="tab-btn" data-tab="autosummary">自動摘要</button>
     <button class="tab-btn" data-tab="sentiment">回饋洞察</button>
-    <button class="tab-btn" data-tab="favorites">收藏</button>
   </div>
 
   <div class="tab-panel active" id="tab-comments">
@@ -2179,23 +2191,6 @@ function renderHtml(dataset) {
     </div>
   </div>
 
-  <div class="tab-panel" id="tab-favorites">
-    <div class="chart-card">
-      <div class="list-header">
-        <h2 style="margin:0">收藏的評論</h2>
-      </div>
-      <div class="note" style="margin-bottom:12px;">收藏狀態存在這台電腦的瀏覽器裡，不會同步給其他人、換瀏覽器或清除瀏覽器資料後會消失。</div>
-      <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>平台</th><th>日期</th><th>星等</th><th>內容</th><th></th></tr>
-        </thead>
-        <tbody id="favoritesTableBody"></tbody>
-      </table>
-      </div>
-      <div class="note" id="favoritesNote"></div>
-    </div>
-  </div>
   </div>
 
   <div class="group-panel" id="group-journey">
@@ -2284,6 +2279,24 @@ function renderHtml(dataset) {
   </div>
   </div>
 
+  <div class="group-panel" id="group-favorites">
+    <div class="chart-card">
+      <div class="list-header">
+        <h2 style="margin:0">收藏的評論</h2>
+      </div>
+      <div class="note" style="margin-bottom:12px;">收藏狀態存在這台電腦的瀏覽器裡，不會同步給其他人、換瀏覽器或清除瀏覽器資料後會消失。</div>
+      <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>平台</th><th>日期</th><th>星等</th><th>內容</th><th></th></tr>
+        </thead>
+        <tbody id="favoritesTableBody"></tbody>
+      </table>
+      </div>
+      <div class="note" id="favoritesNote"></div>
+    </div>
+  </div>
+
   <script>
     const dataset = ${dataJson};
 
@@ -2336,6 +2349,14 @@ function renderHtml(dataset) {
       if (!titleEl) return;
       const full = titleEl.dataset.full || titleEl.textContent;
       titleEl.dataset.full = full;
+      // 防止打字過程中文字從短到長，讓按鈕的版面寬度跟著抖動——尤其小螢幕上比重較小的
+      // 「收藏」按鈕沒有固定寬度，文字變短的那零點幾秒可能會被擠到上一行、打完字又跳回下一行。
+      // 第一次執行時把「完整文字」的實際寬度量出來鎖成 min-width，之後不管正在打幾個字，
+      // 這個元素（進而整個按鈕）的版面寬度都維持打完字之後的最終寬度，不會反覆換行跳動。
+      if (!titleEl.dataset.lockedWidth) {
+        titleEl.style.minWidth = titleEl.getBoundingClientRect().width + 'px';
+        titleEl.dataset.lockedWidth = '1';
+      }
       if (titleEl._typeTimer) {
         clearInterval(titleEl._typeTimer);
         titleEl._typeTimer = null;
@@ -2394,6 +2415,13 @@ function renderHtml(dataset) {
       // 之後就算已經正常切換分組，也會每次重整頁面都被這條規則強制拉回服務藍圖。
       if (!savedGroup && savedTab === 'journeypain') {
         savedGroup = 'journey';
+        savedTab = null;
+      }
+
+      // 相容舊資料：改版前「收藏」曾經是DEEP INSIGHTS底下的一個子分頁，
+      // 如果瀏覽器還記得那筆舊的偏好，直接導向新的、獨立出來的收藏分組。
+      if (!savedGroup && savedTab === 'favorites') {
+        savedGroup = 'favorites';
         savedTab = null;
       }
 
