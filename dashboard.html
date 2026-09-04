@@ -462,6 +462,66 @@
   .chart-card.live-anomaly-alert::after{
     border-color: rgba(255,56,96,0.7);
   }
+  /* ===== 突發異常警示卡片：邊框流光動態效果（Border Beam）=====
+     這張卡片的 ::before/::after 已經被上面的紅色轉角裝飾線佔用，所以流光改用
+     兩個額外插入的裝飾用 <span>（見HTML，anomaly-beam-wrap／anomaly-beam-mask），
+     不動用 pseudo-element，也就不會跟轉角裝飾互相覆蓋。
+     做法（純CSS，只用transform:rotate跑動畫，GPU合成、不觸發layout/paint）：
+       1) anomaly-beam-wrap：inset:0 且 overflow:hidden 的「窗口」，裁切範圍精準對齊
+          卡片本身的圓角，且只裁切這個span自己的子節點，完全不影響卡片本身的
+          box-shadow（hover發光）或轉角裝飾線（它們不是這個span的子節點）。
+       2) anomaly-beam-spin：塞在窗口裡、遠大於卡片本身（inset:-150%）的巨大
+          conic-gradient旋轉色塊——夠大讓旋轉時不用擔心圓角矩形邊角的裁切精準度。
+       3) anomaly-beam-mask：疊在流光上方、往內縮1.5px的實色遮罩，圓角跟卡片一致，
+          只留外圈1.5px當流光通道，中間完全蓋住看不到流光、不影響文字可讀性。
+       4) 卡片內容（圓點、文字）額外設 position:relative + z-index，確保穩定疊在
+          流光層最上面，不受HTML中插入順序影響。 */
+  .live-anomaly-alert .anomaly-beam-wrap{
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .live-anomaly-alert .anomaly-beam-spin{
+    position: absolute;
+    inset: -150%;
+    background: conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      transparent 270deg,
+      rgba(255, 140, 90, 0.35) 315deg,
+      #ff3860 344deg,
+      #ffb37a 356deg,
+      transparent 360deg
+    );
+    animation: anomalyBeamSpin 3s linear infinite;
+    will-change: transform;
+  }
+  .live-anomaly-alert .anomaly-beam-mask{
+    position: absolute;
+    inset: 1.5px; /* 露出1.5px當流光通道 */
+    border-radius: inherit;
+    background: #171a21; /* 貼近 .chart-card 深色底，避免半透明穿透看到流光暈開 */
+    pointer-events: none;
+    z-index: 0;
+  }
+  .live-anomaly-alert .ai-alert-dot,
+  .live-anomaly-alert .live-anomaly-alert-text{
+    position: relative;
+    z-index: 1; /* 蓋過流光層，確保文字/圓點永遠在最上面 */
+  }
+  @media (hover: hover) {
+    /* hover時流光轉快一點，呼應既有的hover警戒感（背景變亮＋外發光） */
+    .chart-card.live-anomaly-alert:hover .anomaly-beam-spin{ animation-duration: 1.6s; }
+  }
+  @keyframes anomalyBeamSpin{
+    to { transform: rotate(360deg); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .live-anomaly-alert .anomaly-beam-spin{ animation: none; }
+  }
   .chart-card.live-col-radar{
     padding-top: 0;
     padding-left: 0;
@@ -1352,6 +1412,8 @@
 
       <div class="live-col-3">
         <div class="chart-card live-anomaly-alert" id="liveAnomalyAlert" style="display:none;" role="button" tabindex="0" aria-label="突發異常警示，點擊查看 AI 洞察">
+          <span class="anomaly-beam-wrap" aria-hidden="true"><span class="anomaly-beam-spin"></span></span>
+          <span class="anomaly-beam-mask" aria-hidden="true"></span>
           <span class="ai-alert-dot"></span>
           <div class="live-anomaly-alert-text">
             <div class="ai-alert-title" id="liveAnomalyAlertTitle"></div>
@@ -2833,6 +2895,18 @@
     // 健康雷達卡片高度是固定的，「近期熱門負評關鍵字」疊在它下面，
     // 所以是靠壓縮/放寬「近期熱門負評關鍵字」這張卡片本身的高度，讓它跟左欄底部對齊，
     // 不是動整欄（live-col-2）的高度——雷達圖不該因為這個對齊需求被連帶壓縮或拉長。
+    // Bug fix（手機版滾動時網址列收合/展開，造成「近期熱門負評關鍵字」劇烈閃爍跳動）：
+    // 行動瀏覽器（尤其 Chrome/Safari）滾動時網址列收合展開，只會改變 window.innerHeight，
+    // 不會改變 innerWidth，但一樣會觸發 window 的 resize 事件。原本 resize handler 沒有
+    // 任何防呆，每次都直接呼叫 renderKeywordRows()，而它內部是整段 container.innerHTML
+    // 重新賦值——40格 LED 的進場動畫（ledSweepIn，帶 stagger delay）會整批重播一次，
+    // 使用者看到的就是「清空→重新掃描點亮」的劇烈閃爍。用兩層防呆解決：
+    //   1) lastKeywordRowCount：只有「要顯示的列數」真的改變時才重繪，高度沒變、
+    //      算出來還是同樣列數就跳過，不重播動畫。
+    //   2) resize handler 加 debounce，且只在「寬度」真的改變時才重新計算版面，
+    //      網址列收合展開這種只改高度的 resize 事件直接忽略。
+    let lastKeywordRowCount = null;
+
     function syncKeywordCardHeight() {
       const col1 = document.querySelector('.live-col-1');
       const card = document.getElementById('keywordChartCard');
@@ -2840,7 +2914,12 @@
 
       if (window.innerWidth <= 1100) {
         card.style.height = '';
-        if (renderKeywordRows) renderKeywordRows(5); // 窄螢幕維持原本固定5列，版面本來就沒問題
+        // 窄螢幕固定5列，只有「還沒渲染過」或「上次不是5列」才重繪，
+        // 避免每次 resize（含網址列收合展開）都讓LED進場動畫整批重播。
+        if (renderKeywordRows && lastKeywordRowCount !== 5) {
+          renderKeywordRows(5); // 窄螢幕維持原本固定5列，版面本來就沒問題
+          lastKeywordRowCount = 5;
+        }
         return;
       }
 
@@ -2867,7 +2946,11 @@
           const SAFETY_MARGIN = 8;
           const rowCapacity = Math.floor((availableHeight - SCALE_HEIGHT - SAFETY_MARGIN) / ROW_HEIGHT);
           const rowCount = Math.max(5, rowCapacity); // renderRows()內部會再依實際資料筆數(最多15筆)夾住上限
-          renderKeywordRows(rowCount);
+          // 只有列數真的變了才重繪，高度微調、算出來還是同樣列數就跳過，不重播動畫。
+          if (rowCount !== lastKeywordRowCount) {
+            renderKeywordRows(rowCount);
+            lastKeywordRowCount = rowCount;
+          }
         }
       }
     }
@@ -2877,9 +2960,20 @@
       syncLiveColumnHeights();
       syncKeywordCardHeight();
     }));
+    // debounce（100ms）+ 只在「寬度」真的改變時才重新計算版面：
+    // 手機網址列收合/展開、鍵盤彈出等只會改變 innerHeight 的情況直接忽略，
+    // 避免觸發不必要的 forced reflow 與（修好前的）LED 動畫重播。
+    let keywordLastViewportWidth = window.innerWidth;
+    let keywordResizeDebounceTimer = null;
     window.addEventListener('resize', () => {
-      syncLiveColumnHeights();
-      syncKeywordCardHeight();
+      clearTimeout(keywordResizeDebounceTimer);
+      keywordResizeDebounceTimer = setTimeout(() => {
+        const widthChanged = window.innerWidth !== keywordLastViewportWidth;
+        keywordLastViewportWidth = window.innerWidth;
+        if (!widthChanged) return;
+        syncLiveColumnHeights();
+        syncKeywordCardHeight();
+      }, 100);
     });
     // 額外保險：等 window 的 load 事件（字型、圖片等外部資源都真正載入完成）之後，
     // 再量一次高度、觸發一次圖表 resize()。雙 requestAnimationFrame 通常已經足夠，
