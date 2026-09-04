@@ -523,10 +523,10 @@
     .live-anomaly-alert .anomaly-beam-spin{ animation: none; }
   }
   .chart-card.live-col-radar{
-    padding-top: 0;
-    padding-left: 0;
-    padding-right: 0;
-    padding-bottom: 14px; /* 圖例(本期/上期)跟卡片底部邊界之間留一點呼吸空間，不要緊貼在一起 */
+    padding: 0; /* 四邊都貼齊卡片邊框，讓掃描光效果能鋪滿整張卡片；圖例跟邊框的呼吸空間改成
+                   在 Chart.js 的 layout.padding.bottom 裡面留（見 renderHealthRadar），
+                   而不是在這裡用 CSS padding 留，這樣圖例離邊框的距離才會落在畫布內、
+                   不會讓掃描光在下緣多出一截明顯的空白帶。 */
     overflow: hidden;
   }
   .live-col-radar .radar-scan-wrap{
@@ -935,7 +935,15 @@
      狀態膠囊（#aiInsightStatus）已經移到卡片外部（跟 AUTO_SUMMARY 那排一樣的獨立
      狀態列），卡頭現在只剩 h2 跟這顆按鈕兩個子節點，靠 .auto-card-header 原本就有的
      justify-content:space-between 自然左右分佈，不需要額外的 flex wrapper 了。 */
-  .ai-insight-card .auto-card-header{ cursor:pointer; }
+  /* 整張卡片的 hover 發光／點擊展開，跟下面「自動摘要」三張 .auto-card 用同一套視覺與
+     互動語彙（顏色數值也直接沿用，方便以後兩邊要調整時一起改）：滑鼠移到卡片任何地方
+     （不只是卡頭）都會亮邊框＋外發光，點擊卡片任何地方（LED列/切換按鈕本身有各自的
+     點擊行為，見下面 setupAIInsightToggle 的例外處理）都能展開/收合，不再侷限於卡頭。 */
+  .ai-insight-card{ cursor:pointer; user-select:none; transition:box-shadow 0.2s ease, border-color 0.2s ease; }
+  @media (hover: hover) {
+    .ai-insight-card:hover{ border-color:#454b58; box-shadow:0 0 24px rgba(198, 242, 78, 0.15); }
+    .ai-insight-card:hover h2{ color:#C6F24E; transition:color 0.2s ease; }
+  }
   .insight-expand-btn{
     background: rgba(var(--hud-glow),0.08);
     border: 1px solid rgba(var(--hud-glow),0.35);
@@ -2730,6 +2738,12 @@
           maintainAspectRatio: false,
           animation: false, // 進場動畫全站關閉，見上方 Chart.defaults.animation 說明
           onResize: () => { if (sweepOverlay) sweepOverlay.resize(); }, // 疊加層尺寸交給Chart.js自己的resize通知來同步，不再自己另外掛ResizeObserver
+          layout: {
+            // 卡片外層 padding 已經改成四邊貼齊(0)，這裡改在畫布內部留白：
+            // 只墊在最下面，把「雷達圖＋圖例」這整塊往上推，讓圖例跟卡片下邊框
+            // 保持距離，但雷達圖跟圖例彼此的間距不受影響（還是緊靠在一起）。
+            padding: { top: 0, left: 0, right: 0, bottom: 14 },
+          },
           scales: {
             r: {
               min: 0, max: 100,
@@ -5600,8 +5614,9 @@
     // ===== AI 智慧洞察卡片：收合／展開整卡（方案 B）=====
     // 收合狀態只留「突發異常警示橫幅」＋ Top3 LED 點陣列，把每列下方的真實用戶引言
     // （.ai-issue-detail）跟卡片最底部的「建議行動」（#aiActionDetailWrap）都收進
-    // max-height:0 的抽屜裡；點卡頭或切換按鈕才展開。引言／點陣本身不在卡頭範圍內，
-    // 點擊它們自然不會誤觸這裡的收合／展開（不需要額外攔截冒泡）。
+    // max-height:0 的抽屜裡；跟「自動摘要」三張 .auto-card 同一套互動慣例，改成點擊
+    // 整張卡片（不只是卡頭）都能展開/收合——LED 列本身有自己的點擊行為（開評論抽屜），
+    // 切換按鈕也有自己的點擊行為，這兩種都要排除掉，避免跟這裡的整卡展開/收合互相誤觸。
     // 這裡用「查詢 DOM 現況」而不是「快取節點陣列」，是因為 renderIssues() 是非同步
     // fetch 完成後才動態產生 .ai-issue-detail，切換按鈕在那之前就已經綁好事件了。
     (function setupAIInsightToggle() {
@@ -5649,10 +5664,18 @@
       function toggle() { setExpanded(!isExpanded()); }
 
       toggleBtn.addEventListener('click', (e) => {
-        e.stopPropagation(); // 避免再冒泡到下面的卡頭 click 導致展開/收合被觸發兩次而互相抵銷
+        e.stopPropagation(); // 避免再冒泡到下面的整卡 click 導致展開/收合被觸發兩次而互相抵銷
         toggle();
       });
-      header.addEventListener('click', () => toggle());
+
+      // 監聽整張卡片（跟 .auto-card 三張卡片同一套做法），排除掉本身已經有獨立
+      // 點擊行為的子元素：切換按鈕（上面已經 stopPropagation，這裡再擋一次求保險）、
+      // 以及每一列 LED（點擊會另外打開評論抽屜，見 renderIssues 裡的 openIssueReviewDrawer）。
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.insight-expand-btn')) return;
+        if (e.target.closest('.ai-led-item')) return;
+        toggle();
+      });
     })();
 
     // ===== 所有圖表都建立完成，現在把剛才暫時的「有版面但看不見」樣式清乾淨，
