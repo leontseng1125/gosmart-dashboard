@@ -1387,10 +1387,10 @@ function renderHtml(dataset) {
     .live-anomaly-alert .anomaly-beam-spin{ animation: none; }
   }
   .chart-card.live-col-radar{
-    padding-top: 0;
-    padding-left: 0;
-    padding-right: 0;
-    padding-bottom: 14px; /* 圖例(本期/上期)跟卡片底部邊界之間留一點呼吸空間，不要緊貼在一起 */
+    padding: 0; /* 四邊都貼齊卡片邊框，讓掃描光效果能鋪滿整張卡片；圖例跟邊框的呼吸空間改成
+                   在 Chart.js 的 layout.padding.bottom 裡面留（見 renderHealthRadar），
+                   而不是在這裡用 CSS padding 留，這樣圖例離邊框的距離才會落在畫布內、
+                   不會讓掃描光在下緣多出一截明顯的空白帶。 */
     overflow: hidden;
   }
   .live-col-radar .radar-scan-wrap{
@@ -1799,7 +1799,15 @@ function renderHtml(dataset) {
      狀態膠囊（#aiInsightStatus）已經移到卡片外部（跟 AUTO_SUMMARY 那排一樣的獨立
      狀態列），卡頭現在只剩 h2 跟這顆按鈕兩個子節點，靠 .auto-card-header 原本就有的
      justify-content:space-between 自然左右分佈，不需要額外的 flex wrapper 了。 */
-  .ai-insight-card .auto-card-header{ cursor:pointer; }
+  /* 整張卡片的 hover 發光／點擊展開，跟下面「自動摘要」三張 .auto-card 用同一套視覺與
+     互動語彙（顏色數值也直接沿用，方便以後兩邊要調整時一起改）：滑鼠移到卡片任何地方
+     （不只是卡頭）都會亮邊框＋外發光，點擊卡片任何地方（LED列/切換按鈕本身有各自的
+     點擊行為，見下面 setupAIInsightToggle 的例外處理）都能展開/收合，不再侷限於卡頭。 */
+  .ai-insight-card{ cursor:pointer; user-select:none; transition:box-shadow 0.2s ease, border-color 0.2s ease; }
+  @media (hover: hover) {
+    .ai-insight-card:hover{ border-color:#454b58; box-shadow:0 0 24px rgba(198, 242, 78, 0.15); }
+    .ai-insight-card:hover h2{ color:#C6F24E; transition:color 0.2s ease; }
+  }
   .insight-expand-btn{
     background: rgba(var(--hud-glow),0.08);
     border: 1px solid rgba(var(--hud-glow),0.35);
@@ -2034,11 +2042,19 @@ function renderHtml(dataset) {
     border-radius:50%;
     background:#FFFFFF;
     box-shadow: 0 0 8px #C6F24E;
-    animation: radarPipPulse 3s infinite ease-in-out;
+    animation: radarPipPulse 4s infinite ease-in-out;
   }
   @keyframes radarPipPulse {
-    0%, 100% { box-shadow: 0 0 4px rgba(198, 242, 78, 0.4); opacity:0.85; }
-    50% { box-shadow: 0 0 10px rgba(198, 242, 78, 0.85); opacity:1; }
+    0%, 100% {
+      box-shadow: 0 0 6px 1px rgba(198, 242, 78, 0.55), 0 0 2px rgba(255, 255, 255, 0.5);
+      opacity:0.85;
+      transform: translateY(-50%) scale(1);
+    }
+    50% {
+      box-shadow: 0 0 20px 5px rgba(198, 242, 78, 1), 0 0 8px rgba(255, 255, 255, 0.95);
+      opacity:1;
+      transform: translateY(-50%) scale(1.4);
+    }
   }
   @media (hover: hover) {
     /* Hover 只做文字變色，光束／端點本身不加任何特效 */
@@ -2075,7 +2091,7 @@ function renderHtml(dataset) {
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .pain-point-bar { animation:none; }
+    .pain-point-bar::after { animation:none; }
   }
 
   .card-detail-drawer { max-height:0; overflow:hidden; transition:max-height 0.35s ease; }
@@ -2244,6 +2260,7 @@ function renderHtml(dataset) {
     .tab-btn { padding: 9px 12px; font-size: 13px; white-space: nowrap; }
     .chart-card { padding: 14px; margin-bottom: 16px; }
     .chart-card h2 { font-size: 13px; margin-bottom: 12px; }
+    .auto-card-header h2 { margin-bottom: 0; } /* 「自動摘要」三張卡片維持較緊湊的標題間距，不要跟著上面這條舊卡片規則走 */
     .chart-container { height: 220px; }
     .list-header { flex-direction: column; align-items: flex-start; gap: 10px; }
     .list-header > div { width: 100%; flex-wrap: wrap; }
@@ -3594,6 +3611,12 @@ function renderHtml(dataset) {
           maintainAspectRatio: false,
           animation: false, // 進場動畫全站關閉，見上方 Chart.defaults.animation 說明
           onResize: () => { if (sweepOverlay) sweepOverlay.resize(); }, // 疊加層尺寸交給Chart.js自己的resize通知來同步，不再自己另外掛ResizeObserver
+          layout: {
+            // 卡片外層 padding 已經改成四邊貼齊(0)，這裡改在畫布內部留白：
+            // 只墊在最下面，把「雷達圖＋圖例」這整塊往上推，讓圖例跟卡片下邊框
+            // 保持距離，但雷達圖跟圖例彼此的間距不受影響（還是緊靠在一起）。
+            padding: { top: 0, left: 0, right: 0, bottom: 14 },
+          },
           scales: {
             r: {
               min: 0, max: 100,
@@ -5868,11 +5891,13 @@ function renderHtml(dataset) {
         fadeInCanvas(versionCanvas, 500);
 
         const lastIndex = versionAnalysis.length - 1;
-        // 需求1：正常點用萊姆綠、半徑是異常點的一半；異常點維持較大尺寸＋警示紅。
-        // 需求2：最新版本不管是否驟降，一律獨立蓋成紅色（呼吸光暈另外畫在疊加canvas上，見下面drawLatestVersionGlow）。
+        // 需求1：正常點用萊姆綠、半徑3px；異常點（評分驟降的版本）跟最新版本統一改成白色小圓點，
+        //        半徑都是原本6px縮小為0.7倍＝4.2px，用「顏色統一為白」取代原本紅／白混雜的警示語彙。
+        // 需求2：最新版本另外疊加呼吸光暈（畫在獨立overlay canvas上），套用跟「歷史高頻痛點 Top 5」
+        //        端點呼吸光同一組萊姆綠＋白核參數，見下面 drawLatestVersionGlow；異常點沒有這個光暈。
         const NORMAL_RADIUS = 3;
-        const ANOMALY_RADIUS = 6; // 正常點固定是這個的一半
-        const LATEST_RADIUS = 6;
+        const ANOMALY_RADIUS = 6 * 0.7; // 4.2：驟降異常點縮小為原尺寸的0.7倍，跟最新版本點同尺寸
+        const LATEST_RADIUS = 6 * 0.7; // 4.2：最新版本點縮小為原尺寸的0.7倍
 
         autoVersionChart = new Chart(versionCanvas, {
           type: 'line',
@@ -5900,8 +5925,8 @@ function renderHtml(dataset) {
               pointBackgroundColor: (context) => {
                 const v = versionAnalysis[context.dataIndex];
                 if (!v) return '#C6F24E';
-                if (context.dataIndex === lastIndex) return '#FF3860'; // 最新版本固定紅色，不受是否驟降影響
-                return v.isRegression ? '#FF3860' : '#C6F24E'; // 異常＝警示紅／正常＝萊姆綠
+                if (context.dataIndex === lastIndex) return '#FFFFFF'; // 最新版本固定白色，不受是否驟降影響
+                return v.isRegression ? '#FFFFFF' : '#C6F24E'; // 異常＝白色小點／正常＝萊姆綠
               },
               pointBorderColor: 'transparent',
             }],
@@ -5970,11 +5995,31 @@ function renderHtml(dataset) {
           },
         });
 
-        // ===== 需求2：最新版本的呼吸光暈，畫在獨立疊加canvas上（跟健康雷達的掃描光同一套作法），
-        //      不進Chart.js自己的canvas，才不會跟tooltip/hover的重繪排程搶畫布。 =====
+        // ===== 需求2：最新版本的端點呼吸光，畫在獨立疊加canvas上（跟健康雷達的掃描光同一套作法），
+        //      不進Chart.js自己的canvas，才不會跟tooltip/hover的重繪排程搶畫布。
+        //      套用跟「歷史高頻痛點 Top 5」端點呼吸光（radarPipPulse）同一組概念：萊姆綠外暈＋白核柔光、
+        //      4秒一次呼吸；改用「多停靠點＋指數衰減」的放射狀漸層手刻柔光，而不是靠 ctx.shadowBlur——
+        //      不同瀏覽器的 shadowBlur 模糊演算法強度不一，實測範圍偏小、邊緣偏硬，
+        //      自己控制漸層停靠點的衰減曲線才能確保暈開範圍夠大、邊緣夠柔、且跨瀏覽器一致。 =====
         latestVersionGlowOverlay = createEffectOverlay(versionCanvas);
-        const GLOW_RGB = '255, 56, 96'; // 跟異常/最新版本點位同一組警示紅
-        const GLOW_PERIOD = 2600; // 呼吸一次的時間（ms），數字愈大節奏愈慢愈沉靜，不刺眼
+        const GLOW_PERIOD = 4000; // 呼吸一次的時間（ms），跟歷史高頻痛點端點呼吸光的週期一致
+
+        // 畫一層柔光圓：用多個停靠點＋指數衰減（而非線性）模擬真正的柔和暈開，
+        // frac 從 0（中心）到 1（最外圈）時 alpha 以 e^(-4·frac²) 衰減，越靠外圈衰減越平緩、沒有明顯截斷邊緣
+        function drawSoftGlow(ctx, x, y, radius, rgb, peakAlpha) {
+          const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
+          const steps = 12;
+          for (let i = 0; i <= steps; i++) {
+            const frac = i / steps;
+            const alpha = peakAlpha * Math.exp(-4 * frac * frac);
+            grad.addColorStop(frac, 'rgba(' + rgb + ', ' + alpha.toFixed(3) + ')');
+          }
+          ctx.beginPath();
+          ctx.arc(x, y, radius, 0, Math.PI * 2);
+          ctx.fillStyle = grad;
+          ctx.fill();
+        }
+
         let glowRafId = null;
 
         function drawLatestVersionGlow(timestamp) {
@@ -5986,15 +6031,14 @@ function renderHtml(dataset) {
             const point = meta && meta.data && meta.data[meta.data.length - 1];
             if (point && typeof point.x === 'number') {
               const t = (timestamp % GLOW_PERIOD) / GLOW_PERIOD; // 0~1
-              const wave = (1 - Math.cos(t * Math.PI * 2)) / 2; // 0~1，柔和的來回曲線，不是線性鋸齒
-              const ringRadius = LATEST_RADIUS + wave * 11;
-              const ringAlpha = 0.45 * (1 - wave);
+              const wave = (1 - Math.cos(t * Math.PI * 2)) / 2; // 0~1，柔和的來回曲線，呼應CSS ease-in-out呼吸節奏
+              const outerRadius = 14 + wave * 22; // 14px → 36px：擴散範圍明顯加大
+              const outerAlpha = 0.28 + wave * 0.72; // 0.28 → 1.0：拉大明暗對比，低谷要明顯淡、高峰要明顯亮
+              const innerRadius = 6 + wave * 10; // 6px → 16px：白核柔光範圍
+              const innerAlpha = 0.35 + wave * 0.65; // 0.35 → 1.0
               ctx.save();
-              ctx.beginPath();
-              ctx.arc(point.x, point.y, ringRadius, 0, Math.PI * 2);
-              ctx.strokeStyle = 'rgba(' + GLOW_RGB + ', ' + ringAlpha.toFixed(3) + ')';
-              ctx.lineWidth = 2;
-              ctx.stroke();
+              drawSoftGlow(ctx, point.x, point.y, outerRadius, '198, 242, 78', outerAlpha);
+              drawSoftGlow(ctx, point.x, point.y, innerRadius, '255, 255, 255', innerAlpha);
               ctx.restore();
             }
           }
@@ -6464,8 +6508,9 @@ function renderHtml(dataset) {
     // ===== AI 智慧洞察卡片：收合／展開整卡（方案 B）=====
     // 收合狀態只留「突發異常警示橫幅」＋ Top3 LED 點陣列，把每列下方的真實用戶引言
     // （.ai-issue-detail）跟卡片最底部的「建議行動」（#aiActionDetailWrap）都收進
-    // max-height:0 的抽屜裡；點卡頭或切換按鈕才展開。引言／點陣本身不在卡頭範圍內，
-    // 點擊它們自然不會誤觸這裡的收合／展開（不需要額外攔截冒泡）。
+    // max-height:0 的抽屜裡；跟「自動摘要」三張 .auto-card 同一套互動慣例，改成點擊
+    // 整張卡片（不只是卡頭）都能展開/收合——LED 列本身有自己的點擊行為（開評論抽屜），
+    // 切換按鈕也有自己的點擊行為，這兩種都要排除掉，避免跟這裡的整卡展開/收合互相誤觸。
     // 這裡用「查詢 DOM 現況」而不是「快取節點陣列」，是因為 renderIssues() 是非同步
     // fetch 完成後才動態產生 .ai-issue-detail，切換按鈕在那之前就已經綁好事件了。
     (function setupAIInsightToggle() {
@@ -6513,10 +6558,18 @@ function renderHtml(dataset) {
       function toggle() { setExpanded(!isExpanded()); }
 
       toggleBtn.addEventListener('click', (e) => {
-        e.stopPropagation(); // 避免再冒泡到下面的卡頭 click 導致展開/收合被觸發兩次而互相抵銷
+        e.stopPropagation(); // 避免再冒泡到下面的整卡 click 導致展開/收合被觸發兩次而互相抵銷
         toggle();
       });
-      header.addEventListener('click', () => toggle());
+
+      // 監聽整張卡片（跟 .auto-card 三張卡片同一套做法），排除掉本身已經有獨立
+      // 點擊行為的子元素：切換按鈕（上面已經 stopPropagation，這裡再擋一次求保險）、
+      // 以及每一列 LED（點擊會另外打開評論抽屜，見 renderIssues 裡的 openIssueReviewDrawer）。
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.insight-expand-btn')) return;
+        if (e.target.closest('.ai-led-item')) return;
+        toggle();
+      });
     })();
 
     // ===== 所有圖表都建立完成，現在把剛才暫時的「有版面但看不見」樣式清乾淨，
