@@ -1109,6 +1109,111 @@
   .auto-card-header h2 { margin:0; }
   .auto-card .insight-v2-headline { margin-bottom:10px; }
   .auto-card-chart-wrap { height:168px; position:relative; }
+
+  /* ===== 歷史高頻痛點 Top 5：改以純 HTML/CSS 渲染的雷達光束列表（Beam Fade + 端點呼吸光），
+     取代原本 Chart.js 長條圖，沿用全站萊姆綠(#C6F24E)高科技深空雷達視覺語彙 ===== */
+  .pain-beam-list { display:flex; flex-direction:column; justify-content:center; gap:12px; height:100%; padding:2px 4px; }
+  .pain-point-row {
+    display:grid;
+    grid-template-columns: minmax(64px, 110px) 1fr auto;
+    align-items:center;
+    gap:10px;
+    padding:3px 2px;
+    border-radius:6px;
+    cursor:pointer;
+    position:relative;
+  }
+  .pain-point-label {
+    font-size:11px;
+    color:#e8e9ed;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    transition: color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .pain-point-value {
+    font-size:11px;
+    color:#9aa0ac;
+    font-variant-numeric: tabular-nums;
+    white-space:nowrap;
+    transition: color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .pain-point-track {
+    position:relative;
+    height:3px;
+    border-radius:9999px;
+    background: rgba(198, 242, 78, 0.05);
+    overflow:visible;
+  }
+  /* 光束本體：由左至右單向淡出（左側完全透明融入深黑背景，右端收束為實色聚光端點）；
+     hover 時圖表本身（光束／端點）維持原樣不加特效，只有文字變色＋顯示明細 tooltip */
+  .pain-point-bar {
+    position:absolute;
+    top:0; left:0; height:100%;
+    min-width:3%;
+    border-radius:9999px;
+    background: linear-gradient(90deg,
+      rgba(198, 242, 78, 0) 0%,
+      rgba(198, 242, 78, 0.25) 40%,
+      rgba(198, 242, 78, 0.6) 70%,
+      rgba(198, 242, 78, 1) 100%
+    );
+  }
+  /* 端點聚光微標記：白核＋萊姆綠外暈，模擬深空雷達持續追蹤鎖定目標的信號浮標；
+     呼吸動畫只掛在這個端點小圓點上，避免整條光束跟著一起脈動 */
+  .pain-point-bar::after {
+    content:'';
+    position:absolute;
+    right:0; top:50%;
+    transform: translateY(-50%);
+    width:4px; height:4px;
+    border-radius:50%;
+    background:#FFFFFF;
+    box-shadow: 0 0 8px #C6F24E;
+    animation: radarPipPulse 3s infinite ease-in-out;
+  }
+  @keyframes radarPipPulse {
+    0%, 100% { box-shadow: 0 0 4px rgba(198, 242, 78, 0.4); opacity:0.85; }
+    50% { box-shadow: 0 0 10px rgba(198, 242, 78, 0.85); opacity:1; }
+  }
+  @media (hover: hover) {
+    /* Hover 只做文字變色，光束／端點本身不加任何特效 */
+    .pain-point-row:hover .pain-point-label,
+    .pain-point-row:hover .pain-point-value {
+      color:#C6F24E;
+    }
+    /* 明細 tooltip：懸浮顯示分類全名／負評則數／總則數／平均星等，
+       純 CSS attr() 實作（內容來自 data-tooltip），不需要額外 JS 事件監聽 */
+    .pain-point-row[data-tooltip]::before {
+      content: attr(data-tooltip);
+      position:absolute;
+      left:50%;
+      bottom:100%;
+      transform: translate(-50%, -6px);
+      background:#11151d;
+      color:#e8e9ed;
+      font-size:10.5px;
+      font-family:"JetBrains Mono", ui-monospace, monospace;
+      letter-spacing:0.01em;
+      padding:6px 10px;
+      border-radius:6px;
+      border:1px solid rgba(198, 242, 78, 0.35);
+      box-shadow: 0 8px 20px rgba(0,0,0,0.4), 0 0 10px rgba(198, 242, 78, 0.12);
+      white-space:nowrap;
+      pointer-events:none;
+      opacity:0;
+      z-index:5;
+      transition: opacity 0.15s ease, transform 0.15s ease;
+    }
+    .pain-point-row[data-tooltip]:hover::before {
+      opacity:1;
+      transform: translate(-50%, -10px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pain-point-bar { animation:none; }
+  }
+
   .card-detail-drawer { max-height:0; overflow:hidden; transition:max-height 0.35s ease; }
   .auto-detail-inner { padding-top:14px; margin-top:14px; border-top:1px solid var(--border); }
   .auto-detail-table { width:100%; border-collapse:collapse; font-size:11.5px; }
@@ -1708,7 +1813,7 @@
         </div>
         <div class="insight-v2-headline" id="autoCard2Headline"></div>
         <div class="auto-card-chart-wrap">
-          <canvas id="autoPainChart"></canvas>
+          <div class="pain-beam-list" id="autoPainList"></div>
         </div>
         <div class="card-detail-drawer" id="autoCard2Detail">
           <div class="auto-detail-inner">
@@ -3816,7 +3921,7 @@
         // 面板從 display:none 切回可見時，Chart.js 的內部尺寸可能還停留在切走之前的舊值
         // （例如切到別的分頁後才發生 window resize，隱藏中的canvas不會收到通知）。
         // 這裡切分頁時統一強制 resize() 一次所有圖表，「AI 洞察」分頁併入自動摘要的
-        // autoVersionChart／autoPainChart 也一併受惠，避免寬高塌陷或圖表跑位。
+        // autoVersionChart 也一併受惠，避免寬高塌陷或圖表跑位（歷史高頻痛點已改為純 CSS 光束列表，不受影響）。
         if (window.Chart && Chart.instances) {
           requestAnimationFrame(() => {
             Object.values(Chart.instances).forEach(c => { try { c.resize(); } catch (e) {} });
@@ -4841,6 +4946,7 @@
           // 點在圖表、標籤按鈕、或展開後的詳情表格本身時，不要觸發整張卡片的展開/收合，
           // 讓「跟圖表/標籤/表格列互動看細部評論」跟「展開/收合卡片」徹底分開，不會互相誤觸
           if (e.target.closest('canvas')) return;
+          if (e.target.closest('.pain-beam-list')) return;
           if (e.target.closest('.insight-v2-tag')) return;
           if (e.target.closest('.auto-detail-table')) return;
 
@@ -5082,39 +5188,36 @@
           : '目前沒有偵測到明顯的高頻痛點';
       }
 
-      let autoPainChart = null;
-      const painCanvas = document.getElementById('autoPainChart');
-      if (painCanvas && window.Chart) {
-        fadeInCanvas(painCanvas, 500);
-        autoPainChart = new Chart(painCanvas, {
-          type: 'bar',
-          data: {
-            labels: painPoints5.map(p => p.category),
-            datasets: [{
-              data: painPoints5.map(p => p.negativeCount),
-              backgroundColor: '#ff6b6b',
-              borderRadius: 3,
-              maxBarThickness: 22,
-            }],
-          },
-          options: {
-            indexAxis: 'y',
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: { duration: 500 },
-            scales: {
-              x: { ticks: { color: '#9aa0ac', font: { size: 10 } }, grid: { color: '#2a2e38' } },
-              y: { ticks: { color: '#e8e9ed', font: { size: 11 } }, grid: { display: false } },
-            },
-            plugins: { legend: { display: false } },
-            onClick: (evt, elements) => {
-              if (!elements.length) return;
-              const p = painPoints5[elements[0].index];
-              if (!p) return;
-              const matched = dataset.allReviewsFlat.filter(r => r.categories.includes(p.category) && r.sentiment === 'negative');
-              openReviewDrawer(p.category + ' 的歷史負評', '共 ' + matched.length + ' 則', matched);
-            },
-          },
+      // 純 HTML/CSS 雷達光束列表：以線段長度呈現負評則數（原 Chart.js 長條圖已移除，
+      // 改用 CSS 漸層光束＋端點呼吸光；hover 只做文字變色，圖表本身不加特效，
+      // 明細改用 data-tooltip + CSS attr() 做的懸浮 tooltip 呈現，詳見上方 .pain-point-* 樣式）
+      const painListEl = document.getElementById('autoPainList');
+      if (painListEl) {
+        const maxPainCount = Math.max(1, ...painPoints5.map(p => p.negativeCount));
+        painListEl.innerHTML = painPoints5.length
+          ? painPoints5.map((p) => {
+              const pct = Math.max(6, Math.round((p.negativeCount / maxPainCount) * 100));
+              const avgScoreStr = p.avgScore != null ? p.avgScore.toFixed(2) + '★' : '—';
+              const tooltip = p.category + ' ／ 負評 ' + p.negativeCount + ' 則' +
+                (p.totalCount != null ? ' ／ 總則數 ' + p.totalCount + ' 則' : '') +
+                ' ／ 平均 ' + avgScoreStr;
+              return (
+                '<div class="pain-point-row" data-category="' + p.category + '" data-tooltip="' + tooltip + '">' +
+                  '<div class="pain-point-label">' + p.category + '</div>' +
+                  '<div class="pain-point-track"><div class="pain-point-bar" style="width:' + pct + '%;"></div></div>' +
+                  '<div class="pain-point-value">' + p.negativeCount + ' 則</div>' +
+                '</div>'
+              );
+            }).join('')
+          : '<div class="note">目前沒有偵測到明顯的高頻痛點</div>';
+
+        painListEl.querySelectorAll('.pain-point-row').forEach((row) => {
+          row.addEventListener('click', () => {
+            const p = painPoints5.find(item => item.category === row.dataset.category);
+            if (!p) return;
+            const matched = dataset.allReviewsFlat.filter(r => r.categories.includes(p.category) && r.sentiment === 'negative');
+            openReviewDrawer(p.category + ' 的歷史負評', '共 ' + matched.length + ' 則', matched);
+          });
         });
       }
 
@@ -5141,7 +5244,7 @@
         });
       }
 
-      setupAutoCardExpand('autoCard2', 'autoCard2Detail', () => autoPainChart);
+      setupAutoCardExpand('autoCard2', 'autoCard2Detail');
 
       // ===== 卡片三：近期異動與行動指引 =====
       // 標籤＝近期熱門負評關鍵字；行動建議＝從卡片一/二同一批訊號各挑最顯著的一項組成固定模板
@@ -5287,7 +5390,7 @@
         }
 
         // 分頁／群組從 display:none 切回可見，統一補一次 resize()，
-        // 避免 autoVersionChart / autoPainChart 沿用切走前的舊尺寸而跑位或塌陷。
+        // 避免 autoVersionChart 沿用切走前的舊尺寸而跑位或塌陷（歷史高頻痛點已改為純 CSS 光束列表，不受影響）。
         requestAnimationFrame(() => {
           if (window.Chart && Chart.instances) {
             Object.values(Chart.instances).forEach((c) => { try { c.resize(); } catch (e) {} });
