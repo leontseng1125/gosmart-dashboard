@@ -1749,13 +1749,215 @@ function renderHtml(dataset) {
   .ai-alert-title { font-size:13px; font-weight:700; color:#FF6B85; line-height:1.5; }
   .ai-alert-meta { font-size:11px; color:var(--muted); margin-top:3px; }
 
-  .ai-issue-list { display:flex; flex-direction:column; gap:10px; margin-bottom:6px; }
-  .ai-issue-item { border:1px solid var(--border); border-radius:8px; padding:10px 12px; background:rgba(255,255,255,0.02); }
-  .ai-issue-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
-  .ai-issue-rank { font-family:"JetBrains Mono", ui-monospace, monospace; font-size:11px; color:rgb(var(--hud-glow)); font-weight:700; }
-  .ai-issue-title { font-size:13px; font-weight:600; color:var(--text); flex:1; min-width:120px; }
-  .ai-issue-count { padding:2px 8px; border-radius:999px; font-size:10.5px; font-weight:700; background:rgba(255,170,0,0.12); color:#FFAA00; font-family:"JetBrains Mono", ui-monospace, monospace; white-space:nowrap; }
+  /* ===== 深度洞察「突發異常警示」邊框流光（Border Beam）：跟 LIVE MONITOR 的
+     #liveAnomalyAlert 共用同一套結構與 anomalyBeamSpin 動畫，只是換一個父層選擇器
+     （.ai-alert-banner 本身是個 flex 卡片，需要 position:relative 才能當作絕對定位
+     子節點的容器），視覺原理完全相同：wrap 負責裁切，spin 是巨大的 conic-gradient
+     旋轉色塊，mask 蓋住中間只留邊緣一圈當流光通道。 ===== */
+  .ai-alert-banner{ position: relative; }
+  .ai-alert-banner .anomaly-beam-wrap{
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .ai-alert-banner .anomaly-beam-spin{
+    position: absolute;
+    inset: -150%;
+    background: conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      transparent 270deg,
+      rgba(255, 140, 90, 0.35) 315deg,
+      #ff3860 344deg,
+      #ffb37a 356deg,
+      transparent 360deg
+    );
+    animation: anomalyBeamSpin 3s linear infinite;
+    will-change: transform;
+  }
+  .ai-alert-banner .anomaly-beam-mask{
+    position: absolute;
+    inset: 1.5px;
+    border-radius: inherit;
+    background: #241722; /* 貼近 .ai-alert-banner 本身的暗紅底色，蓋住中間避免流光穿透過亮 */
+    pointer-events: none;
+    z-index: 0;
+  }
+  .ai-alert-banner .ai-alert-dot,
+  .ai-alert-banner .ai-alert-banner-text{
+    position: relative;
+    z-index: 1; /* 蓋過流光層，確保文字/圓點永遠在最上面、清楚可讀 */
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ai-alert-banner .anomaly-beam-spin{ animation: none; }
+  }
+
+  /* ===== AI 智慧洞察：卡頭展開/收合切換按鈕 =====
+     狀態膠囊（#aiInsightStatus）已經移到卡片外部（跟 AUTO_SUMMARY 那排一樣的獨立
+     狀態列），卡頭現在只剩 h2 跟這顆按鈕兩個子節點，靠 .auto-card-header 原本就有的
+     justify-content:space-between 自然左右分佈，不需要額外的 flex wrapper 了。 */
+  .ai-insight-card .auto-card-header{ cursor:pointer; }
+  .insight-expand-btn{
+    background: rgba(var(--hud-glow),0.08);
+    border: 1px solid rgba(var(--hud-glow),0.35);
+    color: rgb(var(--hud-glow));
+    font-size: 11px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    padding: 4px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  @media (hover: hover) {
+    .insight-expand-btn:hover{ background: rgba(var(--hud-glow),0.16); }
+  }
+
+  /* ===== AI 智慧洞察：戰術 LED 點陣儀表 v2（桌機單行、手機上下雙層）=====
+     每一列拆成兩個獨立的語意區塊，取代舊版「label 寫死固定寬度」的做法：
+       .ai-led-header    → 序號＋平台膠囊＋問題全名。flex:1 讓它自由撐滿剩餘
+                            寬度，不再被提早截斷成刪節號「...」。
+       .ai-led-bar-group → 40 格點陣＋筆數/佔比。flex:0 0 auto 維持自身內容的
+                            固定寬度，不參與剩餘空間分配——這是修掉「桌機版
+                            燈條跟數字中間空一大截」的關鍵：舊版讓 led-track
+                            用 flex:1 撐滿列剩餘空間，燈格用 flex-grow（上限
+                            10px）撐大，撐不滿的部分就變成一段視覺上無意義的
+                            空白；現在燈格改回規格要求的固定 3px／12px／2px
+                            間距，bar-group 整體只佔剛好夠用的寬度，緊貼在
+                            header 右邊。
+     桌機（>640px）：.ai-led-item 是一列 flex row，header 跟 bar-group 並排在
+     同一行。手機（≤640px）改成 flex-direction:column，header 獨佔一整行讓
+     問題全名完整換行顯示（不再壓成單字「登.」），bar-group 另起一行、點陣跟
+     數字一樣緊靠在一起。 */
+  .ai-led-list{ display:flex; flex-direction:column; gap:4px; margin-bottom:6px; }
+  .ai-led-item{
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 3px 4px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  @media (hover: hover) {
+    .ai-led-item:hover{ background: rgba(255,255,255,0.04); }
+  }
+  .ai-led-header{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 auto;
+    min-width: 0; /* .ai-led-title 的 text-overflow:ellipsis 要生效，父層一定要有 min-width:0 */
+    overflow: hidden;
+  }
+  .ai-led-idx{
+    font-size: 11px;
+    color: rgb(var(--hud-grid));
+    flex-shrink: 0;
+  }
+  .ai-led-header .badge{ flex-shrink: 0; }
+  .ai-led-title{
+    font-size: 12px;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .ai-led-bar-group{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto; /* 固定寬度、不參與剩餘空間分配，避免撐出中間的大片空隙 */
+  }
+  /* 蓋掉 .led-track/.led-seg 原本給 LIVE MONITOR 關鍵字圖表用的
+     「flex-grow + max-width:10px 隨容器變寬」那套規則，改回規格要求的固定
+     3px寬/12px高/2px間距物理尺寸，兩張卡的 LED 視覺語言各自獨立，互不影響。 */
+  .ai-led-bar-group .led-track{ width: auto; flex: 0 0 auto; }
+  .ai-led-bar-group .led-seg{ flex: 0 0 3px; max-width: 3px; width: 3px; }
+  .ai-led-metrics{
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 12px;
+    color: rgb(var(--hud-glow));
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  /* 過載時計數轉紅字，跟左側 .badge.critical 統一用同一個紅（#FF3860），
+     不沿用 LIVE MONITOR 關鍵字LED圖表原本的 var(--neg)（偏鮭魚粉），
+     避免同一張卡上出現兩種不同色階的「紅」。 */
+  .ai-led-count.is-overload{ color: #FF3860; }
+  .ai-led-ratio{
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .ai-issue-detail{
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s ease;
+  }
+  .ai-issue-detail .ai-issue-quote{ margin: 2px 4px 10px; }
   .ai-issue-quote { border-left:2px solid var(--border); padding:6px 10px; font-size:12px; color:var(--muted); line-height:1.6; font-style:italic; }
+  .ai-action-detail{
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s ease;
+  }
+  @media (max-width: 640px) {
+    .ai-led-item{ flex-direction: column; align-items: flex-start; gap: 4px; }
+    .ai-led-header{ width: 100%; flex-basis: 100%; }
+    .ai-led-title{
+      font-size: 11px;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+    }
+    /* ===== 手機版第二行「彈性自適應」（Fluid Track）=====
+       桌機版刻意讓 40 格燈條維持規格要求的固定 3px 物理尺寸（見上面
+       .ai-led-bar-group .led-seg 的說明），因為桌機空間夠、不需要縮；
+       但手機窄螢幕下卡片可用寬度只剩約 310~330px，燈條固定寬度（40×3px+
+       39×2px間距≈198px）加上右側「[ 63 則 ! ]（佔總負評 18%）」文字
+       （約130px）兩者相加會直接超版，導致這一行整個從卡片右側溢出。
+       這裡改成：bar-group 佔滿整行寬度、justify-content:space-between
+       讓燈條跟數據自然分居兩端；燈條容器改 flex:1 1 auto 讓它能吃滿
+       扣掉數據文字之後剩下的空間；每一格燈格改成 flex:1 1 0（寬度交給
+       flex 依比例分配），min-width:1.5px 是縮到底也不會消失的下限，
+       max-width:4px 則是螢幕夠寬時的上限，避免格子突然變得比桌機版還粗。
+       數據文字 flex-shrink:0 固定不被壓扁，字級再縮小一點減輕橫向負擔。 */
+    .ai-led-bar-group{
+      width: 100%;
+      box-sizing: border-box;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .ai-led-bar-group .led-track{
+      flex: 1 1 auto;
+      min-width: 0;
+      width: 100%;
+      gap: 1px; /* 手機版間距也跟著微縮，幫燈條多擠出一點寬度緩衝 */
+    }
+    .ai-led-bar-group .led-seg{
+      flex: 1 1 0px; /* 寬度交由 flex 自由分配，取代桌機版寫死的 flex:0 0 3px */
+      min-width: 1.5px;
+      max-width: 4px;
+      width: auto; /* 取消桌機版寫死的 width:3px，讓上面的 flex-basis:0 真正生效 */
+      height: 10px;
+      border-radius: 1px;
+    }
+    .ai-led-metrics{
+      flex-shrink: 0;
+      font-size: 10.5px;
+    }
+  }
 
   /* ===== 自動摘要 v2：3張卡片（版本評分與健康度／歷史高頻痛點Top5／近期異動與行動指引），
      收合時只顯示 headline + 精簡圖表，點擊「整張卡片」（跟「回饋洞察」四張卡片同樣的互動方式，
@@ -1810,6 +2012,12 @@ function renderHtml(dataset) {
   }
   .badge.android { background: rgba(198,242,78,0.15); color: var(--android); }
   .badge.ios { background: rgba(0,221,205,0.15); color: var(--ios); }
+  /* 嚴重度膠囊：AI 智慧洞察的痛點列表過載（count > 40）時用這個取代平台色，
+     跟中間過載點陣（琥珀）、右側紅字 [ N 則 ! ] 一起在視覺上標出「這則要優先處理」。
+     .badge.neutral 給「全平台」這種不屬於單一 OS 的標籤一個中性灰底色，
+     避免誤套用 iOS 的青綠色造成語意錯誤。 */
+  .badge.critical { background: rgba(255,56,96,0.15); color: #FF3860; border: 1px solid rgba(255,56,96,0.4); }
+  .badge.neutral { background: rgba(154,160,172,0.12); color: var(--muted); }
   .score-neg { color: var(--neg); font-weight: 600; white-space: nowrap; }
   .score-pos { color: var(--text); font-weight: 600; white-space: nowrap; }
   .review-text { color: var(--text); }
@@ -2303,25 +2511,33 @@ function renderHtml(dataset) {
 
   <div class="tab-panel active" id="tab-ai">
 
+  <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+    <span class="status-pill status-ok mono" id="aiInsightStatus">SYNCED</span>
+  </div>
+
   <div class="chart-card ai-insight-card" id="aiInsightCard">
-    <div class="auto-card-header">
+    <div class="auto-card-header" id="aiInsightHeader">
       <h2>🛰️ AI 智慧洞察與版本預警 <span class="h2-note">AI DEEP INSIGHT</span></h2>
-      <span class="status-pill status-ok mono" id="aiInsightStatus">SYNCED</span>
+      <button type="button" class="insight-expand-btn" id="aiInsightToggleBtn" aria-expanded="false" aria-controls="aiInsightBody">▾ 展開完整分析</button>
     </div>
 
     <div id="aiInsightBody">
       <div class="ai-alert-banner" id="aiAlertBanner" style="display:none;">
+        <span class="anomaly-beam-wrap" aria-hidden="true"><span class="anomaly-beam-spin"></span></span>
+        <span class="anomaly-beam-mask" aria-hidden="true"></span>
         <span class="ai-alert-dot"></span>
-        <div>
+        <div class="ai-alert-banner-text">
           <div class="ai-alert-title" id="aiAlertTitle"></div>
           <div class="ai-alert-meta mono" id="aiAlertMeta"></div>
         </div>
       </div>
 
-      <div class="ai-issue-list" id="aiIssueList"></div>
+      <div class="ai-led-list" id="aiIssueList"></div>
 
-      <div class="h2-note" style="margin:14px 0 8px;">建議行動</div>
-      <div class="insight-v2-actions" id="aiActionList"></div>
+      <div class="ai-action-detail" id="aiActionDetailWrap">
+        <div class="h2-note" style="margin:14px 0 8px;">建議行動</div>
+        <div class="insight-v2-actions" id="aiActionList"></div>
+      </div>
     </div>
 
     <div class="insight-empty" id="aiInsightEmpty" style="display:none;">暫無最新 AI 洞察資料</div>
@@ -3436,6 +3652,20 @@ function renderHtml(dataset) {
           const innerR = arc.innerRadius;
           const outerR = arc.outerRadius;
           const midR = (innerR + outerR) / 2;
+
+          // 手機窄螢幕、或卡片容器尺寸還在重排穩定的當下，Chart.js 量出來的
+          // cx/cy/outerR/midR 可能暫時是 NaN、0，甚至負數。這裡先做一次嚴格
+          // 邊界檢查，只要任何一個關鍵幾何量不是「有限、且大於 0」的合法數值，
+          // 就直接中止這一幀的繪製，等下一次 requestAnimationFrame 重新量測，
+          // 避免把不合法的 radius 傳進 ctx.arc() 觸發 IndexSizeError。
+          if (
+            !Number.isFinite(cx) || !Number.isFinite(cy) ||
+            !Number.isFinite(outerR) || outerR <= 0 ||
+            !Number.isFinite(midR) || midR <= 0
+          ) {
+            return;
+          }
+
           const now = performance.now();
 
           // 同心圓漣漪：每圈從圓環外緣往外擴散、邊淡出
@@ -3444,6 +3674,9 @@ function renderHtml(dataset) {
             if (age > RIPPLE_DURATION) return;
             const t = age / RIPPLE_DURATION;
             const radius = outerR + t * RIPPLE_EXPAND;
+            // 每一圈漣漪各自的半徑也要單獨驗證一次，理論上 outerR 合法時
+            // radius 一定是正數，但還是留著防呆，不讓單一漣漪的異常拖垮整幀。
+            if (!Number.isFinite(radius) || radius <= 0) return;
             const alpha = (1 - t) * 0.45;
             ctx.save();
             ctx.beginPath();
@@ -3457,6 +3690,7 @@ function renderHtml(dataset) {
           // 游標追蹤光點：沿著圓環中線持續繞圈
           const dotX = cx + Math.cos(dotAngle) * midR;
           const dotY = cy + Math.sin(dotAngle) * midR;
+          if (!Number.isFinite(dotX) || !Number.isFinite(dotY)) return;
           ctx.save();
           ctx.beginPath();
           ctx.arc(dotX, dotY, 4, 0, Math.PI * 2);
@@ -5941,6 +6175,97 @@ function renderHtml(dataset) {
         });
       }
 
+      // ===== 戰術 LED 點陣儀表：沿用 LIVE MONITOR 近期熱門負評關鍵字（recentKeywordChart）
+      //      的 40 格微型燈格繪製邏輯（見 renderRecentKeywordChart 裡的 buildTrack()），
+      //      這裡獨立複製一份而不是共用同一個函式，因為兩邊的資料筆數上限意義不同
+      //      （這裡是跟 LED 物理格數 40 比較，決定要不要標記過載，而不是跟總負評數比較——
+      //      總負評數只用來算旁邊的「佔總負評 N%」百分比，兩個計算彼此獨立）。 =====
+      function buildIssueLedTrack(count) {
+        const CAPACITY = 40; // 每軌固定 40 個微型點陣燈格
+        const OVERLOAD_TAIL = 5; // 過載時，末端幾格轉琥珀色警示
+        const isOverload = count > CAPACITY;
+        const activeCount = isOverload ? CAPACITY : count;
+        const overloadStart = CAPACITY - OVERLOAD_TAIL;
+        let html = '';
+        for (let i = 0; i < CAPACITY; i++) {
+          let cls = 'led-seg';
+          if (i < activeCount) {
+            cls += (isOverload && i >= overloadStart) ? ' is-overload' : ' is-active';
+          }
+          html += '<span class="' + cls + '" style="--seg-delay:' + (i * 4) + 'ms"></span>';
+        }
+        return { html, isOverload };
+      }
+
+      // 總負評基準：直接從前端的 dataset.allReviewsFlat 現算 sentiment==='negative' 的
+      // 總則數，跟各痛點的 count 一起算出「佔總負評 N%」，確保跟全站數字口徑一致。
+      function computeTotalNegCount() {
+        const list = (dataset && dataset.allReviewsFlat) || [];
+        return list.filter((r) => r.sentiment === 'negative').length;
+      }
+
+      // 過載時（count > 40）左側平台膠囊改用跟右側紅字 [ N 則 ! ] 同一個紅
+      // （badge critical），視覺上直接標出「這則要優先處理」；沒過載時才照平台
+      // 本來的識別色（Android 萊姆綠／iOS 青綠），辨識不出平台的（例如「全平台」）
+      // 一律用中性灰，不要預設套用 iOS 的顏色造成語意錯誤。
+      // 過載時（count > 40）左側平台膠囊改用跟右側紅字 [ N 則 ! ] 同一個紅
+      // （badge critical），視覺上直接標出「這則要優先處理」；沒過載時才照平台
+      // 本來的識別色（Android 萊姆綠／iOS 青綠），辨識不出平台的（例如「全平台」）
+      // 一律用中性灰，不要預設套用 iOS 的顏色造成語意錯誤。
+      function getIssueBadgeClass(tag, isOverload) {
+        if (isOverload) return 'badge critical';
+        const t = String(tag || '').toLowerCase();
+        if (t.includes('android')) return 'badge android';
+        if (t.includes('ios')) return 'badge ios';
+        return 'badge neutral';
+      }
+
+      // 點擊 Top 3 痛點列時要篩出對應的相關評論，判斷平台的欄位優先讀
+      // item.platform（如果 insights.json 未來有給這個明確欄位），沒有的話
+      // 才退回用畫面上本來就有在顯示的 item.tag／item.label 去猜（跟上面
+      // getIssueBadgeClass 判斷平台色的邏輯共用同一套字串比對規則）。
+      // 辨識不出平台（例如「全平台」）就不篩平台，只靠關鍵字比對。
+      function getIssuePlatformFilter(item) {
+        const raw = item.platform || item.tag || item.label || '';
+        const t = String(raw).toLowerCase();
+        if (t.includes('android')) return 'android';
+        if (t.includes('ios')) return 'ios';
+        return null;
+      }
+
+      // 把問題標題切成幾個具體的動作/症狀片語，例如「登入後閃退」→
+      // ['登入','閃退']，評論內文只要包含其中任何一個詞就視為相關（OR比對），
+      // 跟站內其他關鍵字比對（openWordDrawer）一樣走「文字包含」而非精準比對，
+      // 不上NLP函式庫，用常見的中文連接詞/標點當切分點就夠用。
+      function extractIssueKeywords(title) {
+        if (!title) return [];
+        const DELIMS = /[、，,。！？!?／\/｜|＆&＋+～~\s]+|後|且|和|與|或|但|導致|造成|同時|再|才|就|於是/g;
+        const parts = String(title).split(DELIMS).map((s) => s.trim()).filter(Boolean);
+        const keywords = parts.filter((s) => s.length >= 2);
+        return keywords.length ? keywords : [String(title)]; // 切不出有意義的片語就退回用整句比對
+      }
+
+      // 點擊某個痛點＝查看該痛點相關負評，比對順序完全照規格：
+      // 1) 一定要是負評 2) 有辨識出平台才篩平台 3) 標題關鍵詞比對評論內文。
+      function getIssueMatchedReviews(item) {
+        const title = item.title || item.issue || item.subject || '';
+        const platform = getIssuePlatformFilter(item);
+        const keywords = extractIssueKeywords(title);
+        return (dataset && dataset.allReviewsFlat || []).filter((r) => {
+          if (r.sentiment !== 'negative') return false;
+          if (platform && r.platform !== platform) return false;
+          const text = r.text || '';
+          return keywords.some((kw) => text.includes(kw));
+        });
+      }
+
+      function openIssueReviewDrawer(item) {
+        if (!item) return;
+        const title = item.title || item.issue || item.subject || '未命名問題';
+        const matched = getIssueMatchedReviews(item);
+        openReviewDrawer(title, '共 ' + matched.length + ' 則相關評論', matched);
+      }
+
       function renderIssues(issues) {
         const listEl = document.getElementById('aiIssueList');
         if (!listEl) return;
@@ -5949,24 +6274,59 @@ function renderHtml(dataset) {
           listEl.innerHTML = '<div class="insight-empty">目前沒有 AI 標記的重點痛點</div>';
           return;
         }
+        const totalNegCount = computeTotalNegCount();
         listEl.innerHTML = list.map((item, idx) => {
           const rank = item.rank || (idx + 1);
           const tag = item.tag || item.label || '';
           const title = item.title || item.issue || item.subject || '未命名問題';
           const count = item.count != null ? item.count : (item.frequency != null ? item.frequency : 0);
           const quote = item.quote || item.review || item.sample_review || item.sample_quote || '';
+          const pct = totalNegCount > 0 ? Math.round((count / totalNegCount) * 100) : 0;
+          const idxLabel = String(rank).padStart(2, '0');
+          const { html: trackHtml, isOverload } = buildIssueLedTrack(count);
+          const badgeClass = getIssueBadgeClass(tag, isOverload);
+          // 標籤格式沿用「近期熱門負評關鍵字」的等寬字體慣例，例如：
+          // [ 52 則 ! ]（佔總負評 18%）；過載時才加上驚嘆號、計數轉紅色。
+          const countLabel = '[ ' + count + ' 則' + (isOverload ? ' !' : '') + ' ]';
+          // v2 版面：.ai-led-header（序號＋膠囊＋問題全名）跟 .ai-led-bar-group
+          // （點陣＋筆數/佔比）是兩個平行的區塊，桌機並排、手機上下堆疊，
+          // 詳細版面規則見上面 CSS 的說明註解。data-issue-index 是給下面
+          // querySelectorAll 之後綁點擊事件時，用來對應回 list[idx] 原始資料。
           return (
-            '<div class="ai-issue-item">' +
-              '<div class="ai-issue-head">' +
-                '<span class="ai-issue-rank">TOP ' + esc(rank) + '</span>' +
-                (tag ? '<span class="badge ios">' + esc(tag) + '</span>' : '') +
-                '<span class="ai-issue-title">' + esc(title) + '</span>' +
-                '<span class="ai-issue-count">' + esc(count) + ' 則</span>' +
+            '<div class="ai-led-item" data-issue-index="' + idx + '" role="button" tabindex="0">' +
+              '<div class="ai-led-header" title="' + esc(title) + '">' +
+                '<span class="mono ai-led-idx">' + idxLabel + ' //</span>' +
+                (tag ? '<span class="' + badgeClass + '">' + esc(tag) + '</span>' : '') +
+                '<span class="ai-led-title">' + esc(title) + '</span>' +
               '</div>' +
-              (quote ? '<div class="ai-issue-quote">「' + esc(quote) + '」</div>' : '') +
-            '</div>'
+              '<div class="ai-led-bar-group">' +
+                '<div class="led-track">' + trackHtml + '</div>' +
+                '<div class="mono ai-led-metrics">' +
+                  '<span class="ai-led-count' + (isOverload ? ' is-overload' : '') + '">' + countLabel + '</span>' +
+                  '<span class="ai-led-ratio">（佔總負評 ' + pct + '%）</span>' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+            (quote ? '<div class="ai-issue-detail"><div class="ai-issue-quote">「' + esc(quote) + '」</div></div>' : '')
           );
         }).join('');
+
+        // 點擊整行、LED 或右側數字都會觸發（監聽器綁在最外層 .ai-led-item，
+        // 靠事件冒泡涵蓋內部所有子節點，不用每個子元素各自綁一次）；
+        // 同時補上 Enter／空白鍵的鍵盤操作，跟站內其他可點擊列（例如
+        // 近期熱門負評關鍵字的 .led-row）採用同一套無障礙互動慣例。
+        listEl.querySelectorAll('.ai-led-item').forEach((el) => {
+          const item = list[Number(el.dataset.issueIndex)];
+          if (!item) return;
+          const handler = () => openIssueReviewDrawer(item);
+          el.addEventListener('click', handler);
+          el.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              handler();
+            }
+          });
+        });
       }
 
       function renderActions(actions) {
@@ -5996,6 +6356,64 @@ function renderHtml(dataset) {
           showEmpty();
           renderLiveAnomalyAlert(null); // 讀取失敗時，LIVE頁的橫幅也一併優雅隱藏並重新對齊高度
         });
+    })();
+
+    // ===== AI 智慧洞察卡片：收合／展開整卡（方案 B）=====
+    // 收合狀態只留「突發異常警示橫幅」＋ Top3 LED 點陣列，把每列下方的真實用戶引言
+    // （.ai-issue-detail）跟卡片最底部的「建議行動」（#aiActionDetailWrap）都收進
+    // max-height:0 的抽屜裡；點卡頭或切換按鈕才展開。引言／點陣本身不在卡頭範圍內，
+    // 點擊它們自然不會誤觸這裡的收合／展開（不需要額外攔截冒泡）。
+    // 這裡用「查詢 DOM 現況」而不是「快取節點陣列」，是因為 renderIssues() 是非同步
+    // fetch 完成後才動態產生 .ai-issue-detail，切換按鈕在那之前就已經綁好事件了。
+    (function setupAIInsightToggle() {
+      const card = document.getElementById('aiInsightCard');
+      const header = document.getElementById('aiInsightHeader');
+      const toggleBtn = document.getElementById('aiInsightToggleBtn');
+      if (!card || !header || !toggleBtn) return;
+
+      function getDrawers() {
+        const drawers = Array.from(document.querySelectorAll('#aiIssueList .ai-issue-detail'));
+        const actionDrawer = document.getElementById('aiActionDetailWrap');
+        if (actionDrawer) drawers.push(actionDrawer);
+        return drawers;
+      }
+
+      function isExpanded() {
+        return card.classList.contains('ai-insight-expanded');
+      }
+
+      function setExpanded(expand) {
+        const drawers = getDrawers();
+        if (expand) {
+          card.classList.add('ai-insight-expanded');
+          toggleBtn.textContent = '▴ 收合儀表';
+          toggleBtn.setAttribute('aria-expanded', 'true');
+          drawers.forEach((d) => {
+            d.style.maxHeight = d.scrollHeight + 'px';
+            d.addEventListener('transitionend', function onEnd(e) {
+              if (e.propertyName !== 'max-height') return;
+              d.removeEventListener('transitionend', onEnd);
+              if (isExpanded()) d.style.maxHeight = 'none'; // 換成 'none'，避免之後內容變動被舊高度裁掉
+            });
+          });
+        } else {
+          card.classList.remove('ai-insight-expanded');
+          toggleBtn.textContent = '▾ 展開完整分析';
+          toggleBtn.setAttribute('aria-expanded', 'false');
+          drawers.forEach((d) => {
+            d.style.maxHeight = d.scrollHeight + 'px'; // 先換成明確 px 值（可能原本是 'none'）才能觸發往 0 的過渡
+            requestAnimationFrame(() => { d.style.maxHeight = '0px'; });
+          });
+        }
+      }
+
+      function toggle() { setExpanded(!isExpanded()); }
+
+      toggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); // 避免再冒泡到下面的卡頭 click 導致展開/收合被觸發兩次而互相抵銷
+        toggle();
+      });
+      header.addEventListener('click', () => toggle());
     })();
 
     // ===== 所有圖表都建立完成，現在把剛才暫時的「有版面但看不見」樣式清乾淨，
