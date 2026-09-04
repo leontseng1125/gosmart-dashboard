@@ -5072,7 +5072,8 @@
             maintainAspectRatio: false,
             animation: { duration: 500 },
             layout: {
-              padding: { right: 10, top: 4 }, // 給最右邊那個點（最新版本）留一點空間，不要讓紅點/hover圈被canvas邊緣切到
+              padding: { right: 24, top: 4 }, // 24px：確保最新版本呼吸光暈全開時（最大半徑約18px＋緩衝）不會被canvas右邊緣裁到，
+                                               // 不能只靠 x軸 offset 留的半格空間，版本數一多那個空間會被壓縮到不夠用
             },
             onResize: () => { if (latestVersionGlowOverlay) latestVersionGlowOverlay.resize(); },
             scales: {
@@ -5168,9 +5169,9 @@
             if (point && typeof point.x === 'number') {
               const t = (timestamp % GLOW_PERIOD) / GLOW_PERIOD; // 0~1
               const wave = (1 - Math.cos(t * Math.PI * 2)) / 2; // 0~1，柔和的來回曲線，呼應CSS ease-in-out呼吸節奏
-              const outerRadius = 14 + wave * 22; // 14px → 36px：擴散範圍明顯加大
+              const outerRadius = 7 + wave * 11; // 7px → 18px：擴散範圍縮減為原本(14→36)的一半
               const outerAlpha = 0.28 + wave * 0.72; // 0.28 → 1.0：拉大明暗對比，低谷要明顯淡、高峰要明顯亮
-              const innerRadius = 6 + wave * 10; // 6px → 16px：白核柔光範圍
+              const innerRadius = 3 + wave * 5; // 3px → 8px：白核柔光範圍縮減為原本(6→16)的一半
               const innerAlpha = 0.35 + wave * 0.65; // 0.35 → 1.0
               ctx.save();
               drawSoftGlow(ctx, point.x, point.y, outerRadius, '198, 242, 78', outerAlpha);
