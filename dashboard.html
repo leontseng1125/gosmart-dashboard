@@ -347,11 +347,18 @@
   }
   .group-btn.active .group-title{ color: rgb(var(--hud-glow)); }
   .group-subtitle{ font-size:12px; color: var(--muted); opacity:0.75; }
-  /* 打字動效播完之後，用一個閃爍指標標示「目前選取中」，只有被選取的按鈕會有 */
-  .group-title.caret-blink::after{
+  /* 常態就先用同一個 ::after 佔好底線指標的寬度空間（opacity:0 隱形，但寬度已經算進按鈕裡），
+     未選取／打字中／打完字閃爍這幾個狀態下的按鈕寬度就會完全一致，不會因為指標突然被插入
+     文件流而把按鈕往右撐開、跟著抖動。 */
+  .group-title::after{
     content:'_';
     display:inline-block;
     margin-left:2px;
+    opacity:0;
+  }
+  /* 打字動效播完之後，只切換 opacity 並套用閃爍動畫，不再動態新增/移除這個佔位字元本身 */
+  .group-title.caret-blink::after{
+    opacity:1;
     animation: groupCaretBlink 1s steps(1) infinite;
   }
   @keyframes groupCaretBlink{ 50%{ opacity:0; } }
@@ -1184,6 +1191,35 @@
   .jp-pareto-track{ width:100%; height:8px; background:var(--bg); border-radius:3px; overflow:hidden; }
   .jp-pareto-fill{ height:100%; border-radius:3px; }
   .jp-pareto-pct{ font-size:9.5px; color:var(--muted); margin-top:6px; }
+
+  /* ===== 手機小尺寸螢幕響應式修復：卡片在窄螢幕上向右突破畫面邊界、產生橫向捲動破版 =====
+     （html,body 的 overflow-x:hidden / max-width:100% 已經在上面設過，這裡處理實際會撐寬
+     版面的元素：各種 Grid 容器、以及卡片外層容器本身的收縮能力）
+     排除範圍：總覽(LIVE MONITOR/DEEP INSIGHTS/JOURNEY BLUEPRINT/FAVORITES)那四顆分組按鈕、
+     以及最上面那 5 張 KPI 卡片（.live-col-kpi），這兩處維持原本的版面，不套用下面的修正。 */
+  @media (max-width: 768px) {
+    /* 儀表板 Grid 容器在手機上強制單欄，minmax(0,1fr) 讓欄位可以正常縮小
+       （單純 1fr 在內容不可縮小時還是會被撐寬，minmax(0,1fr) 才會真的收得回來） */
+    .grid,
+    .grid.grid-2col,
+    .live-grid,
+    .three-col,
+    .two-col,
+    .insight-v2-compare,
+    .jp-charts-grid {
+      grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    /* 圖表卡片外層容器：Grid/Flex item 預設 min-width:auto，內容一旦有不可縮小的固定寬度
+       元素（長字串、固定px的圖表/表格），欄位就會被撐寬到超出螢幕，出現橫向捲動破版。
+       加 min-width:0 讓卡片可以正常收縮到容器寬度，max-width:100% 則保險擋住卡片本身
+       比外層容器還寬的情況。 */
+    .card,
+    .chart-card {
+      min-width: 0;
+      max-width: 100%;
+    }
+  }
 </style>
 </head>
 <body>
@@ -2138,13 +2174,18 @@
         if (!sweepOverlay) return;
         const { ctx } = sweepOverlay;
         const rect = canvas.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return; // 面板還隱藏中，量到0就先不要空跑繪製
         ctx.clearRect(0, 0, rect.width, rect.height);
 
         const rScale = radarChartInstance && radarChartInstance.scales && radarChartInstance.scales.r;
         if (!rScale || typeof rScale.xCenter !== 'number') return;
         if (typeof ctx.createConicGradient !== 'function') return; // 舊瀏覽器沒有這個API就跳過裝飾效果，不影響圖表本身
 
-        const { xCenter, yCenter } = rScale;
+        // 切換分組（display:none）再切回來時，Chart.js 的 scales.r 有可能還沒重新算好，
+        // xCenter/yCenter 會暫時變成 0（型別仍是 number，過不了上面那個型別檢查）。
+        // 這種情況改用畫布本身的中心點當 fallback，避免整個掃描光偏移到左上角、看起來像消失。
+        const xCenter = rScale.xCenter > 0 ? rScale.xCenter : rect.width / 2;
+        const yCenter = rScale.yCenter > 0 ? rScale.yCenter : rect.height / 2;
 
         // 半徑改成動態算：用「圓心到畫布最遠角落」的距離，
         // 這樣不管卡片實際多寬多高，掃描光轉一圈都能覆蓋到整個區塊，不會只在中間畫一個小圓。
@@ -2248,6 +2289,11 @@
       // Chart 建立完成、DOM已穩定之後，才建立疊加canvas並插入它的父層容器，
       // 避免在 Chart.js 初始化/掛內部 ResizeObserver 的過程中去異動同一個容器的 DOM 結構。
       sweepOverlay = createEffectOverlay(canvas, { insertBefore: true });
+
+      // 暴露到全域，讓「大分組切換」那段監聽器可以在切回 LIVE MONITOR 時主動呼叫一次
+      // radarChartInstance.resize()，強制 Chart.js 重新計算 scales.r 的中心座標，
+      // 不要只被動等內部 ResizeObserver（時機不保證跟 display:none→block 完全同步）。
+      window.radarChartInstance = radarChartInstance;
 
       // ===== 用 requestAnimationFrame 持續轉動掃描光角度 =====
       // 現在只重繪疊加的 sweepOverlay canvas，完全不碰 radarChartInstance，
@@ -3343,6 +3389,14 @@
             Object.values(Chart.instances).forEach(c => { try { c.resize(); } catch (e) {} });
           });
         }
+        // 切回 LIVE MONITOR 時，額外主動呼叫一次健康雷達的 resize()，強制 Chart.js
+        // 重新計算 scales.r 的中心座標（xCenter/yCenter），不要只靠上面那個泛用迴圈被動觸發——
+        // 這是「掃描光切回來會消失」的根因：xCenter 短暫變成 0 時 drawSweep() 沒有 fallback。
+        if (btn.dataset.group === 'live' && window.radarChartInstance) {
+          requestAnimationFrame(() => {
+            try { window.radarChartInstance.resize(); } catch (e) {}
+          });
+        }
         // 面板從 display:none 切回可見後，強制把掃描光/光點等疊加 canvas 重新量一次尺寸，
         // 不要只靠 Chart.js 的 onResize 被動觸發（見 createEffectOverlay 上方註解）。
         requestAnimationFrame(() => requestAnimationFrame(resizeAllEffectOverlays));
@@ -4413,8 +4467,13 @@
             responsive: true,
             maintainAspectRatio: false,
             animation: { duration: 500 },
+            layout: {
+              padding: { right: 10, top: 4 }, // 給最右邊那個點（最新版本）留一點空間，不要讓紅點/hover圈被canvas邊緣切到
+            },
             scales: {
               x: {
+                offset: true, // 類別軸預設把第一/最後一個點畫在畫布最左右邊緣；開offset會在頭尾各留半格，
+                               // 這樣最新版本那個點才不會卡在圖表最右邊被裁掉——不需要額外加一個看不見的假版本
                 ticks: {
                   color: '#9aa0ac',
                   font: { size: 10 },
