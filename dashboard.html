@@ -456,6 +456,12 @@
   }
   .chart-card.live-anomaly-alert:active{ transform: scale(0.997); }
   .live-anomaly-alert-text{ flex:1; min-width:0; }
+  /* 這張卡片專屬：角落裝飾線改成跟警示同色的紅色，取代全站 .chart-card 預設的
+     rgba(var(--hud-glow)) 綠色角框，只影響這張卡片，不動到其他 .chart-card。 */
+  .chart-card.live-anomaly-alert::before,
+  .chart-card.live-anomaly-alert::after{
+    border-color: rgba(255,56,96,0.7);
+  }
   .chart-card.live-col-radar{
     padding-top: 0;
     padding-left: 0;
