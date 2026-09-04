@@ -1987,9 +1987,9 @@ function renderHtml(dataset) {
   .pain-beam-list { display:flex; flex-direction:column; justify-content:center; gap:12px; height:100%; padding:2px 4px; }
   .pain-point-row {
     display:grid;
-    grid-template-columns: minmax(64px, 110px) 1fr auto;
+    grid-template-columns: minmax(min-content, 6em) 1fr auto;
     align-items:center;
-    gap:10px;
+    gap:0px;
     padding:3px 2px;
     border-radius:6px;
     cursor:pointer;
@@ -2008,6 +2008,8 @@ function renderHtml(dataset) {
     color:#9aa0ac;
     font-variant-numeric: tabular-nums;
     white-space:nowrap;
+    margin-left:10px; /* gap已縮到2px是為了讓光束往左貼近文字，但這裡要單獨留出跟數值之間的間距，
+                          grid的gap是欄與欄之間統一套用，沒辦法只調其中一個間隙，所以用margin個別補回來 */
     transition: color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .pain-point-track {
@@ -2026,8 +2028,8 @@ function renderHtml(dataset) {
     border-radius:9999px;
     background: linear-gradient(90deg,
       rgba(198, 242, 78, 0) 0%,
-      rgba(198, 242, 78, 0.25) 40%,
-      rgba(198, 242, 78, 0.6) 70%,
+      rgba(198, 242, 78, 0.4) 12%,
+      rgba(198, 242, 78, 0.65) 45%,
       rgba(198, 242, 78, 1) 100%
     );
   }
