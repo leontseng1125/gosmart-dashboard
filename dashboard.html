@@ -772,6 +772,36 @@
   .insight-v2-action { font-size:12px; line-height:1.6; padding-left:16px; position:relative; }
   .insight-v2-action::before { content:'▸'; position:absolute; left:0; color:rgb(var(--hud-glow)); }
 
+  /* ===== AI 智慧洞察與版本預警卡片 ===== */
+  .ai-alert-banner {
+    display:flex; align-items:flex-start; gap:10px;
+    background: rgba(255,56,96,0.08);
+    border:1px solid rgba(255,56,96,0.35);
+    border-radius:8px;
+    padding:10px 14px;
+    margin-bottom:16px;
+  }
+  .ai-alert-dot {
+    width:9px; height:9px; border-radius:50%; margin-top:4px; flex-shrink:0;
+    background:#FF3860;
+    box-shadow:0 0 8px rgba(255,56,96,0.8);
+    animation: aiAlertBreathe 1.6s ease-in-out infinite;
+  }
+  @keyframes aiAlertBreathe {
+    0%,100% { opacity:1; transform:scale(1); }
+    50% { opacity:0.4; transform:scale(0.75); }
+  }
+  .ai-alert-title { font-size:13px; font-weight:700; color:#FF6B85; line-height:1.5; }
+  .ai-alert-meta { font-size:11px; color:var(--muted); margin-top:3px; }
+
+  .ai-issue-list { display:flex; flex-direction:column; gap:10px; margin-bottom:6px; }
+  .ai-issue-item { border:1px solid var(--border); border-radius:8px; padding:10px 12px; background:rgba(255,255,255,0.02); }
+  .ai-issue-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
+  .ai-issue-rank { font-family:"JetBrains Mono", ui-monospace, monospace; font-size:11px; color:rgb(var(--hud-glow)); font-weight:700; }
+  .ai-issue-title { font-size:13px; font-weight:600; color:var(--text); flex:1; min-width:120px; }
+  .ai-issue-count { padding:2px 8px; border-radius:999px; font-size:10.5px; font-weight:700; background:rgba(255,170,0,0.12); color:#FFAA00; font-family:"JetBrains Mono", ui-monospace, monospace; white-space:nowrap; }
+  .ai-issue-quote { border-left:2px solid var(--border); padding:6px 10px; font-size:12px; color:var(--muted); line-height:1.6; font-style:italic; }
+
   /* ===== 自動摘要 v2：3張卡片（版本評分與健康度／歷史高頻痛點Top5／近期異動與行動指引），
      收合時只顯示 headline + 精簡圖表，點擊「整張卡片」（跟「回饋洞察」四張卡片同樣的互動方式，
      排除圖表/標籤/詳情表格本身的點擊）展開內嵌詳情表格；同一時間只允許一張卡片展開，
@@ -1300,6 +1330,31 @@
   </div>
 
   <div class="group-panel" id="group-insights">
+
+  <div class="chart-card ai-insight-card" id="aiInsightCard">
+    <div class="auto-card-header">
+      <h2>🛰️ AI 智慧洞察與版本預警 <span class="h2-note">AI DEEP INSIGHT</span></h2>
+      <span class="status-pill status-ok mono" id="aiInsightStatus">SYNCED</span>
+    </div>
+
+    <div id="aiInsightBody">
+      <div class="ai-alert-banner" id="aiAlertBanner" style="display:none;">
+        <span class="ai-alert-dot"></span>
+        <div>
+          <div class="ai-alert-title" id="aiAlertTitle"></div>
+          <div class="ai-alert-meta mono" id="aiAlertMeta"></div>
+        </div>
+      </div>
+
+      <div class="ai-issue-list" id="aiIssueList"></div>
+
+      <div class="h2-note" style="margin:14px 0 8px;">建議行動</div>
+      <div class="insight-v2-actions" id="aiActionList"></div>
+    </div>
+
+    <div class="insight-empty" id="aiInsightEmpty" style="display:none;">暫無最新 AI 洞察資料</div>
+  </div>
+
   <div class="tabs">
     <button class="tab-btn active" data-tab="comments">評論</button>
     <button class="tab-btn" data-tab="autosummary">自動摘要</button>
@@ -4761,6 +4816,94 @@
       setupAutoCardExpand('autoCard3', 'autoCard3Detail', () => null);
     })();
 
+    // ===== AI 智慧洞察與版本預警：獨立讀取 ./insights.json，跟其他圖表沒有資料相依，
+    //      失敗時不影響任何既有圖表初始化。=====
+    (function renderAIInsight() {
+      const bodyEl = document.getElementById('aiInsightBody');
+      const emptyEl = document.getElementById('aiInsightEmpty');
+      const statusEl = document.getElementById('aiInsightStatus');
+
+      function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+          { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]
+        ));
+      }
+
+      function showEmpty() {
+        if (bodyEl) bodyEl.style.display = 'none';
+        if (emptyEl) emptyEl.style.display = 'block';
+        if (statusEl) { statusEl.textContent = 'NO_DATA'; statusEl.className = 'status-pill status-warn mono'; }
+      }
+
+      function renderAlert(alert) {
+        const banner = document.getElementById('aiAlertBanner');
+        if (!banner) return;
+        const hasVersion = alert && (alert.version || alert.affected_version || alert.trigger_version);
+        const hasDesc = alert && alert.description;
+        if (!hasVersion && !hasDesc) { banner.style.display = 'none'; return; }
+        let version = alert.version || alert.affected_version || alert.trigger_version || '未知版本';
+        version = String(version).replace(/^v/i, ''); // 避免欄位本身已含 v 前綴，跟下面手動補的 v 重複變成 vv4.6.0
+        const time = alert.detected_at || alert.time || alert.timestamp || alert.trigger_date || '';
+        const desc = alert.description || alert.phenomenon || alert.summary || '偵測到異常訊號，請留意。';
+        document.getElementById('aiAlertTitle').textContent = '突發異常警示：v' + version + '　' + desc;
+        document.getElementById('aiAlertMeta').textContent = time ? ('偵測時間：' + time) : '';
+        banner.style.display = 'flex';
+      }
+
+      function renderIssues(issues) {
+        const listEl = document.getElementById('aiIssueList');
+        if (!listEl) return;
+        const list = Array.isArray(issues) ? issues.slice(0, 3) : [];
+        if (!list.length) {
+          listEl.innerHTML = '<div class="insight-empty">目前沒有 AI 標記的重點痛點</div>';
+          return;
+        }
+        listEl.innerHTML = list.map((item, idx) => {
+          const rank = item.rank || (idx + 1);
+          const tag = item.tag || item.label || '';
+          const title = item.title || item.issue || item.subject || '未命名問題';
+          const count = item.count != null ? item.count : (item.frequency != null ? item.frequency : 0);
+          const quote = item.quote || item.review || item.sample_review || item.sample_quote || '';
+          return (
+            '<div class="ai-issue-item">' +
+              '<div class="ai-issue-head">' +
+                '<span class="ai-issue-rank">TOP ' + esc(rank) + '</span>' +
+                (tag ? '<span class="badge ios">' + esc(tag) + '</span>' : '') +
+                '<span class="ai-issue-title">' + esc(title) + '</span>' +
+                '<span class="ai-issue-count">' + esc(count) + ' 則</span>' +
+              '</div>' +
+              (quote ? '<div class="ai-issue-quote">「' + esc(quote) + '」</div>' : '') +
+            '</div>'
+          );
+        }).join('');
+      }
+
+      function renderActions(actions) {
+        const listEl = document.getElementById('aiActionList');
+        if (!listEl) return;
+        const list = Array.isArray(actions) ? actions : [];
+        listEl.innerHTML = list.length
+          ? list.map(a => '<div class="insight-v2-action">' + esc(typeof a === 'string' ? a : (a.text || a.action || '')) + '</div>').join('')
+          : '<div class="insight-empty">目前沒有建議行動項目</div>';
+      }
+
+      fetch('./insights.json')
+        .then((res) => {
+          if (!res.ok) throw new Error('insights.json HTTP ' + res.status);
+          return res.json();
+        })
+        .then((data) => {
+          if (!data || typeof data !== 'object') throw new Error('insights.json 格式異常');
+          renderAlert(data.anomaly_alert);
+          renderIssues(data.top_issues);
+          renderActions(data.action_recommendation);
+          if (statusEl) { statusEl.textContent = 'SYNCED'; statusEl.className = 'status-pill status-ok mono'; }
+        })
+        .catch((err) => {
+          console.warn('[AI Insight] 讀取 insights.json 失敗，改用保底畫面：', err);
+          showEmpty();
+        });
+    })();
 
     // ===== 所有圖表都建立完成，現在把剛才暫時的「有版面但看不見」樣式清乾淨，
     //      恢復成正常的分頁顯示/隱藏規則（靠 .tab-panel.active 這個 class 控制）=====
