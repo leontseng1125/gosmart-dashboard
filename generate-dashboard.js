@@ -1288,13 +1288,38 @@ function renderHtml(dataset) {
   .live-col-3 .live-col-anomaly #anomalyList{
     flex:1;
     overflow-y:auto;
-    min-height:0;
+    /* 最小高度安全網：正常情況下靠 flex:1 自動填滿/收縮以對齊左欄底部，
+       但視窗高度極端不足時，寧可讓清單保有基本可讀高度、把整個頁面推長出現捲軸，
+       也不要被壓縮到看不見（見 syncLiveColumnHeights 裡搭配的 naturalHeight 判斷）。 */
+    min-height:160px;
   }
   .live-col-kpi{
     display:grid; grid-template-columns: 1fr 1fr; gap:14px;
   }
   .live-col-kpi .card:nth-child(3){ grid-column: 1 / -1; }
   .live-col-anomaly{ margin-bottom:0; }
+  /* ===== LIVE MONITOR：突發異常警示橫幅（第三欄，疊在「系統異常與熱門痛點」正上方） =====
+     資料來源跟 DEEP INSIGHTS／AI 洞察 tab 裡的 aiAlertBanner 共用同一份 insights.json 的
+     anomaly_alert，這裡只是同一筆資料的第二個呈現位置，讓使用者在LIVE頁就能看到並點擊跳轉。 */
+  .chart-card.live-anomaly-alert{
+    display:flex;
+    align-items:flex-start;
+    gap:10px;
+    margin-bottom:0;
+    cursor:pointer;
+    background: rgba(255,56,96,0.08);
+    border:1px solid rgba(255,56,96,0.35);
+    transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .chart-card.live-anomaly-alert:hover,
+  .chart-card.live-anomaly-alert:focus-visible{
+    background: rgba(255,56,96,0.15);
+    border-color: rgba(255,56,96,0.6);
+    box-shadow: 0 0 15px rgba(255,56,96,0.18);
+    outline:none;
+  }
+  .chart-card.live-anomaly-alert:active{ transform: scale(0.997); }
+  .live-anomaly-alert-text{ flex:1; min-width:0; }
   .chart-card.live-col-radar{
     padding-top: 0;
     padding-left: 0;
@@ -2184,6 +2209,13 @@ function renderHtml(dataset) {
       </div>
 
       <div class="live-col-3">
+        <div class="chart-card live-anomaly-alert" id="liveAnomalyAlert" style="display:none;" role="button" tabindex="0" aria-label="突發異常警示，點擊查看 AI 洞察">
+          <span class="ai-alert-dot"></span>
+          <div class="live-anomaly-alert-text">
+            <div class="ai-alert-title" id="liveAnomalyAlertTitle"></div>
+            <div class="ai-alert-meta mono" id="liveAnomalyAlertMeta"></div>
+          </div>
+        </div>
         <div class="chart-card live-col-anomaly">
           <h2 style="margin:0 0 2px;">系統異常與熱門痛點 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">合併三個來源依「負評則數」排序：版本異常（評分驟降的版本）、熱門痛點（評論分類）、旅程痛點（服務藍圖分類）。前3名標記為CRITICAL，其餘為WARN。點擊可查看該項目的實際負評。</div></span></h2>
           <div class="note" style="margin:2px 0 10px;">依負評則數排序，點擊可查看實際評論</div>
@@ -2194,6 +2226,14 @@ function renderHtml(dataset) {
   </div>
 
   <div class="group-panel" id="group-insights">
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="ai">AI 洞察</button>
+    <button class="tab-btn" data-tab="comments">評論</button>
+    <button class="tab-btn" data-tab="sentiment">回饋摘要</button>
+  </div>
+
+  <div class="tab-panel active" id="tab-ai">
 
   <div class="chart-card ai-insight-card" id="aiInsightCard">
     <div class="auto-card-header">
@@ -2219,13 +2259,66 @@ function renderHtml(dataset) {
     <div class="insight-empty" id="aiInsightEmpty" style="display:none;">暫無最新 AI 洞察資料</div>
   </div>
 
-  <div class="tabs">
-    <button class="tab-btn active" data-tab="comments">評論</button>
-    <button class="tab-btn" data-tab="autosummary">自動摘要</button>
-    <button class="tab-btn" data-tab="sentiment">回饋洞察</button>
+    <div style="display:flex; align-items:center; gap:6px; margin-bottom:16px;">
+      <span class="status-pill status-ok mono">AUTO_SUMMARY</span>
+      <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">以下內容是依規則自動比對數字產生（版本評分落差、負評分類排序、月增減比較、健康雷達維度變化），不是 AI 理解語意後寫出來的分析，準確度以此為前提，建議搭配下方「回饋摘要」「服務藍圖」交叉確認。</div></span>
+    </div>
+
+    <div class="three-col">
+      <div class="chart-card insight-card-v2 auto-card" id="autoCard1" data-auto-key="version">
+        <div class="auto-card-header">
+          <h2>📈 版本評分與健康度 <span class="h2-note">VERSION HEALTH</span></h2>
+        </div>
+        <div class="insight-v2-headline" id="autoCard1Headline"></div>
+        <div class="auto-card-chart-wrap">
+          <canvas id="autoVersionChart"></canvas>
+        </div>
+        <div class="card-detail-drawer" id="autoCard1Detail">
+          <div class="auto-detail-inner">
+            <table class="auto-detail-table">
+              <thead><tr><th>版本</th><th>負評則數</th><th>平均星等</th><th>較前版落差</th><th>疑似原因／主要負評類型</th></tr></thead>
+              <tbody id="autoCard1Tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="chart-card insight-card-v2 auto-card" id="autoCard2" data-auto-key="pain">
+        <div class="auto-card-header">
+          <h2>🔥 歷史高頻痛點 Top 5 <span class="h2-note">TOP PAIN POINTS</span></h2>
+        </div>
+        <div class="insight-v2-headline" id="autoCard2Headline"></div>
+        <div class="auto-card-chart-wrap">
+          <canvas id="autoPainChart"></canvas>
+        </div>
+        <div class="card-detail-drawer" id="autoCard2Detail">
+          <div class="auto-detail-inner">
+            <table class="auto-detail-table">
+              <thead><tr><th>排名</th><th>分類</th><th>負評則數</th><th>總則數</th><th>平均星等</th></tr></thead>
+              <tbody id="autoCard2Tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="chart-card insight-card-v2 auto-card" id="autoCard3" data-auto-key="context">
+        <div class="auto-card-header">
+          <h2>🧭 近期異動與行動指引 <span class="h2-note">CONTEXT &amp; ACTION</span></h2>
+        </div>
+        <div class="insight-v2-headline" id="autoCard3Headline"></div>
+        <div class="auto-card-tags" id="autoCard3Tags"></div>
+        <div class="insight-v2-actions" id="autoCard3Actions"></div>
+        <div class="card-detail-drawer" id="autoCard3Detail">
+          <div class="auto-detail-inner">
+            <table class="auto-detail-table">
+              <thead><tr><th>分類</th><th>本月負評</th><th>上月負評</th><th>增加則數</th></tr></thead>
+              <tbody id="autoCard3Tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <div class="tab-panel active" id="tab-comments">
+  <div class="tab-panel" id="tab-comments">
     <div class="two-col">
     <div class="chart-card">
       <div class="list-header">
@@ -2287,66 +2380,6 @@ function renderHtml(dataset) {
       </div>
       <div class="note" id="reviewListNote"></div>
       <button class="nav-btn" id="btnLoadMoreReviews" style="margin-top:10px;">載入更多評論</button>
-    </div>
-  </div>
-
-  <div class="tab-panel" id="tab-autosummary">
-    <div style="display:flex; align-items:center; gap:6px; margin-bottom:16px;">
-      <span class="status-pill status-ok mono">AUTO_SUMMARY</span>
-      <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">以下內容是依規則自動比對數字產生（版本評分落差、負評分類排序、月增減比較、健康雷達維度變化），不是 AI 理解語意後寫出來的分析，準確度以此為前提，建議搭配下方「回饋洞察」「服務藍圖」交叉確認。</div></span>
-    </div>
-
-    <div class="three-col">
-      <div class="chart-card insight-card-v2 auto-card" id="autoCard1" data-auto-key="version">
-        <div class="auto-card-header">
-          <h2>📈 版本評分與健康度 <span class="h2-note">VERSION HEALTH</span></h2>
-        </div>
-        <div class="insight-v2-headline" id="autoCard1Headline"></div>
-        <div class="auto-card-chart-wrap">
-          <canvas id="autoVersionChart"></canvas>
-        </div>
-        <div class="card-detail-drawer" id="autoCard1Detail">
-          <div class="auto-detail-inner">
-            <table class="auto-detail-table">
-              <thead><tr><th>版本</th><th>負評則數</th><th>平均星等</th><th>較前版落差</th><th>疑似原因／主要負評類型</th></tr></thead>
-              <tbody id="autoCard1Tbody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-      <div class="chart-card insight-card-v2 auto-card" id="autoCard2" data-auto-key="pain">
-        <div class="auto-card-header">
-          <h2>🔥 歷史高頻痛點 Top 5 <span class="h2-note">TOP PAIN POINTS</span></h2>
-        </div>
-        <div class="insight-v2-headline" id="autoCard2Headline"></div>
-        <div class="auto-card-chart-wrap">
-          <canvas id="autoPainChart"></canvas>
-        </div>
-        <div class="card-detail-drawer" id="autoCard2Detail">
-          <div class="auto-detail-inner">
-            <table class="auto-detail-table">
-              <thead><tr><th>排名</th><th>分類</th><th>負評則數</th><th>總則數</th><th>平均星等</th></tr></thead>
-              <tbody id="autoCard2Tbody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-      <div class="chart-card insight-card-v2 auto-card" id="autoCard3" data-auto-key="context">
-        <div class="auto-card-header">
-          <h2>🧭 近期異動與行動指引 <span class="h2-note">CONTEXT &amp; ACTION</span></h2>
-        </div>
-        <div class="insight-v2-headline" id="autoCard3Headline"></div>
-        <div class="auto-card-tags" id="autoCard3Tags"></div>
-        <div class="insight-v2-actions" id="autoCard3Actions"></div>
-        <div class="card-detail-drawer" id="autoCard3Detail">
-          <div class="auto-detail-inner">
-            <table class="auto-detail-table">
-              <thead><tr><th>分類</th><th>本月負評</th><th>上月負評</th><th>增加則數</th></tr></thead>
-              <tbody id="autoCard3Tbody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -2676,6 +2709,14 @@ function renderHtml(dataset) {
       try { savedGroup = localStorage.getItem(GROUP_STORAGE_KEY); } catch (e) {}
       let savedTab = null;
       try { savedTab = localStorage.getItem(TAB_STORAGE_KEY); } catch (e) {}
+
+      // 相容舊資料：改版前「自動摘要」是DEEP INSIGHTS底下獨立的子分頁，
+      // 現在併入「AI 洞察」分頁（連同原本常駐在tab bar上方的AI智慧洞察卡片一起收納）。
+      // 如果瀏覽器還記得舊的 'autosummary'，直接導向新的 'ai' 分頁鍵值，
+      // 不然舊訪客重整頁面時會找不到 #tab-autosummary，畫面就會空白。
+      if (savedTab === 'autosummary') {
+        savedTab = 'ai';
+      }
 
       // 相容舊資料：改版前「整合式旅程痛點」曾經是DEEP INSIGHTS底下的一個子分頁，
       // 如果瀏覽器還記得那筆舊的偏好，直接導向新的JOURNEY BLUEPRINT分組。
@@ -3629,10 +3670,20 @@ function renderHtml(dataset) {
       col3.style.height = ''; // 先清掉，重新量一次原始高度，避免疊加誤差
       const col1Rect = col1.getBoundingClientRect();
       const col3Rect = col3.getBoundingClientRect();
+      // col3Rect.height 此時是「突發異常警示（若顯示）＋系統異常與熱門痛點」兩張卡片
+      // 疊加後的自然高度，其中已經包含 #anomalyList 的 min-height:160px 安全網，
+      // 所以這個值就是這一欄在目前資料量下「最少需要多高」。
+      const naturalHeight = col3Rect.height;
       const targetHeight = col1Rect.bottom - col3Rect.top;
 
-      if (targetHeight > 0) {
-        col3.style.height = targetHeight + 'px';
+      // 底線對齊左欄：正常情況下 targetHeight 會大於 naturalHeight，直接用它撐高
+      // #anomalyList（flex:1）去對齊左欄底部。但視窗高度極端不足、算出來的 targetHeight
+      // 反而小於安全網下限時，改用 naturalHeight，寧可跟左欄底緣對不齊、讓頁面正常
+      // 出現縱向捲軸，也不要把清單壓縮到看不見。
+      const finalHeight = Math.max(targetHeight, naturalHeight);
+
+      if (finalHeight > 0) {
+        col3.style.height = finalHeight + 'px';
       }
     }
 
@@ -4292,6 +4343,15 @@ function renderHtml(dataset) {
         localStorage.setItem(TAB_STORAGE_KEY, btn.dataset.tab); // 記住這次切到的分頁，下次重整網頁時還原
         replayTabAnimations(btn.dataset.tab);
         requestAnimationFrame(resizeAllEffectOverlays);
+        // 面板從 display:none 切回可見時，Chart.js 的內部尺寸可能還停留在切走之前的舊值
+        // （例如切到別的分頁後才發生 window resize，隱藏中的canvas不會收到通知）。
+        // 這裡切分頁時統一強制 resize() 一次所有圖表，「AI 洞察」分頁併入自動摘要的
+        // autoVersionChart／autoPainChart 也一併受惠，避免寬高塌陷或圖表跑位。
+        if (window.Chart && Chart.instances) {
+          requestAnimationFrame(() => {
+            Object.values(Chart.instances).forEach(c => { try { c.resize(); } catch (e) {} });
+          });
+        }
       });
     });
 
@@ -5714,6 +5774,73 @@ function renderHtml(dataset) {
         banner.style.display = 'flex';
       }
 
+      // ===== LIVE MONITOR 突發異常警示橫幅：跟上面的 aiAlertBanner 讀同一筆 anomaly_alert，
+      //      只是多渲染一份在 LIVE MONITOR 頁面讓使用者更早注意到。沒有資料時優雅隱藏
+      //      （display:none 不留空白），並且無論顯示或隱藏，都要在DOM更新完之後
+      //      主動重新呼叫一次 syncLiveColumnHeights()，避免這個fetch是非同步的、
+      //      比一開始的 rAF 高度校正還晚完成，導致高度算完之後版面又被撐開一次而沒對齊。 =====
+      function renderLiveAnomalyAlert(alert) {
+        const card = document.getElementById('liveAnomalyAlert');
+        if (!card) return;
+        const hasVersion = alert && (alert.version || alert.affected_version || alert.trigger_version);
+        const hasDesc = alert && alert.description;
+        if (!hasVersion && !hasDesc) {
+          card.style.display = 'none';
+          if (typeof syncLiveColumnHeights === 'function') syncLiveColumnHeights();
+          return;
+        }
+        let version = alert.version || alert.affected_version || alert.trigger_version || '未知版本';
+        version = String(version).replace(/^v/i, '');
+        const time = alert.detected_at || alert.time || alert.timestamp || alert.trigger_date || '';
+        const desc = alert.description || alert.phenomenon || alert.summary || '偵測到異常訊號，請留意。';
+        document.getElementById('liveAnomalyAlertTitle').textContent = '突發異常警示：v' + version + '　' + desc;
+        document.getElementById('liveAnomalyAlertMeta').textContent = time ? ('偵測時間：' + time) : '';
+        card.style.display = 'flex';
+        if (typeof syncLiveColumnHeights === 'function') syncLiveColumnHeights();
+      }
+
+      // 點擊／鍵盤Enter或空白鍵：切到 DEEP INSIGHTS 群組的「AI 洞察」子分頁，
+      // 並平滑捲動到AI洞察卡片位置。
+      function goToAIInsightFromLiveBanner() {
+        activateGroup('insights');
+        try { localStorage.setItem(GROUP_STORAGE_KEY, 'insights'); } catch (e) {}
+
+        const aiTabBtn = document.querySelector('.tab-btn[data-tab="ai"]');
+        const aiTabPanel = document.getElementById('tab-ai');
+        if (aiTabBtn && aiTabPanel) {
+          document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+          document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
+          aiTabBtn.classList.add('active');
+          aiTabPanel.classList.add('active');
+          try { localStorage.setItem(TAB_STORAGE_KEY, 'ai'); } catch (e) {}
+          if (typeof replayTabAnimations === 'function') replayTabAnimations('ai');
+        }
+
+        // 分頁／群組從 display:none 切回可見，統一補一次 resize()，
+        // 避免 autoVersionChart / autoPainChart 沿用切走前的舊尺寸而跑位或塌陷。
+        requestAnimationFrame(() => {
+          if (window.Chart && Chart.instances) {
+            Object.values(Chart.instances).forEach((c) => { try { c.resize(); } catch (e) {} });
+          }
+          requestAnimationFrame(() => {
+            if (typeof resizeAllEffectOverlays === 'function') resizeAllEffectOverlays();
+            const target = document.getElementById('aiInsightCard');
+            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          });
+        });
+      }
+
+      const liveAnomalyAlertEl = document.getElementById('liveAnomalyAlert');
+      if (liveAnomalyAlertEl) {
+        liveAnomalyAlertEl.addEventListener('click', goToAIInsightFromLiveBanner);
+        liveAnomalyAlertEl.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            goToAIInsightFromLiveBanner();
+          }
+        });
+      }
+
       function renderIssues(issues) {
         const listEl = document.getElementById('aiIssueList');
         if (!listEl) return;
@@ -5759,6 +5886,7 @@ function renderHtml(dataset) {
         .then((data) => {
           if (!data || typeof data !== 'object') throw new Error('insights.json 格式異常');
           renderAlert(data.anomaly_alert);
+          renderLiveAnomalyAlert(data.anomaly_alert);
           renderIssues(data.top_issues);
           renderActions(data.action_recommendation);
           if (statusEl) { statusEl.textContent = 'SYNCED'; statusEl.className = 'status-pill status-ok mono'; }
@@ -5766,6 +5894,7 @@ function renderHtml(dataset) {
         .catch((err) => {
           console.warn('[AI Insight] 讀取 insights.json 失敗，改用保底畫面：', err);
           showEmpty();
+          renderLiveAnomalyAlert(null); // 讀取失敗時，LIVE頁的橫幅也一併優雅隱藏並重新對齊高度
         });
     })();
 
