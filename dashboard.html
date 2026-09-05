@@ -4146,20 +4146,36 @@
     document.getElementById('otherCategoryNote').textContent =
       '目前有 ' + dataset.otherCount + ' 則評論未命中任何關鍵字、歸類為「其他」，建議定期檢視這個分類，找出尚未涵蓋的新興問題。';
 
+    // ===== 情緒與類別分析：依「總則數（正面+負面）」降冪排序，「其他」固定放最後一名 =====
+    // 每次切換時間範圍（全部/今年/本月/本週）都要重新計算排序，不能只換數值不換順序，
+    // 不然長條圖的高低順序會跟標籤對不上。
+    function sortedCategoryOrderForRange(range) {
+      const stats = dataset.categoryStatsByRange[range];
+      const others = dataset.categoryOrder.filter(c => c !== '其他');
+      const sorted = others.slice().sort((a, b) => {
+        const totalA = stats[a].positive + stats[a].negative;
+        const totalB = stats[b].positive + stats[b].negative;
+        return totalB - totalA;
+      });
+      if (dataset.categoryOrder.includes('其他')) sorted.push('其他');
+      return sorted;
+    }
+
+    const initialCategoryOrder = sortedCategoryOrderForRange('all');
     const categoryChartInstance = new Chart(document.getElementById('categoryChart'), {
       type: 'bar',
       data: {
-        labels: dataset.categoryOrder,
+        labels: initialCategoryOrder,
         datasets: [
           {
             label: '正面',
-            data: dataset.categoryOrder.map(c => dataset.categoryStatsByRange.all[c].positive),
+            data: initialCategoryOrder.map(c => dataset.categoryStatsByRange.all[c].positive),
             backgroundColor: '#c6f24e',
             sentimentKey: 'positive',
           },
           {
             label: '負面',
-            data: dataset.categoryOrder.map(c => dataset.categoryStatsByRange.all[c].negative),
+            data: initialCategoryOrder.map(c => dataset.categoryStatsByRange.all[c].negative),
             backgroundColor: '#ff6b6b',
             sentimentKey: 'negative',
           },
@@ -4177,7 +4193,9 @@
           if (!elements.length) return;
           if (evt.native) evt.native.stopPropagation();
           const el = elements[0];
-          const category = dataset.categoryOrder[el.index];
+          // 用當前圖表實際渲染出來的 labels 取值，而不是原始未排序的 dataset.categoryOrder，
+          // 避免動態排序後 index 對應到錯的分類、點開錯的評論抽屜。
+          const category = categoryChartInstance.data.labels[el.index];
           const sentimentKey = categoryChartInstance.data.datasets[el.datasetIndex].sentimentKey;
           categorySelect.value = category;
           setSentimentFilter(sentimentKey);
@@ -4200,8 +4218,10 @@
         const range = btn.dataset.timeRange;
         activeCategoryRange = range;
         const stats = dataset.categoryStatsByRange[range];
-        categoryChartInstance.data.datasets[0].data = dataset.categoryOrder.map(c => stats[c].positive);
-        categoryChartInstance.data.datasets[1].data = dataset.categoryOrder.map(c => stats[c].negative);
+        const sortedOrder = sortedCategoryOrderForRange(range);
+        categoryChartInstance.data.labels = sortedOrder;
+        categoryChartInstance.data.datasets[0].data = sortedOrder.map(c => stats[c].positive);
+        categoryChartInstance.data.datasets[1].data = sortedOrder.map(c => stats[c].negative);
         categoryChartInstance.update();
       });
     });
@@ -4318,18 +4338,32 @@
       data: {
         labels: dataset.stageOrder,
         datasets: [
-          { label: '正面', data: dataset.stageOrder.map(s => dataset.stageStatsByRange.all[s].positive), backgroundColor: '#c6f24e', sentimentKey: 'positive' },
-          { label: '負面', data: dataset.stageOrder.map(s => dataset.stageStatsByRange.all[s].negative), backgroundColor: '#ff6b6b', sentimentKey: 'negative' },
+          {
+            label: '負面',
+            data: dataset.stageOrder.map(s => dataset.stageStatsByRange.all[s].negative),
+            backgroundColor: '#ff6b6b',
+            borderRadius: { topLeft: 3, topRight: 3 },
+            sentimentKey: 'negative',
+          },
+          {
+            label: '正面',
+            data: dataset.stageOrder.map(s => dataset.stageStatsByRange.all[s].positive),
+            backgroundColor: '#c6f24e',
+            borderRadius: { topLeft: 3, topRight: 3 },
+            sentimentKey: 'positive',
+          },
         ],
       },
       options: {
-          responsive: true,
-          maintainAspectRatio: false,
+        responsive: true,
+        maintainAspectRatio: false,
+        barPercentage: 0.75,
+        categoryPercentage: 0.6,
         scales: {
-          x: { stacked: true, ticks: { color: '#9aa0ac' }, grid: { display: false } },
-          y: { stacked: true, ticks: { color: '#9aa0ac' }, grid: { color: '#2a2e38' } },
+          x: { stacked: false, ticks: { color: '#9aa0ac' }, grid: { display: false } },
+          y: { stacked: false, ticks: { color: '#9aa0ac' }, grid: { color: '#2a2e38' } },
         },
-        plugins: { legend: { labels: { color: '#e8e9ed' } } },
+        plugins: { legend: { labels: { color: '#e8e9ed', boxWidth: 10, boxHeight: 10 } } },
         onClick: (evt, elements) => {
           if (!elements.length) return;
           if (evt.native) evt.native.stopPropagation();
@@ -4349,8 +4383,8 @@
         btn.classList.add('active');
         activeStageRange = btn.dataset.timeRange;
         const stats = dataset.stageStatsByRange[activeStageRange];
-        stageChartInstance.data.datasets[0].data = dataset.stageOrder.map(s => stats[s].positive);
-        stageChartInstance.data.datasets[1].data = dataset.stageOrder.map(s => stats[s].negative);
+        stageChartInstance.data.datasets[0].data = dataset.stageOrder.map(s => stats[s].negative);
+        stageChartInstance.data.datasets[1].data = dataset.stageOrder.map(s => stats[s].positive);
         stageChartInstance.update();
       });
     });
