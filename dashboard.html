@@ -4291,14 +4291,79 @@
       });
     });
 
+    // ===== 長條圖漸層＋柔光發光共用工具（用戶旅程階段檢視／意圖分佈／字詞頻率排行三張圖共用）=====
+    // 由透明到實色的線性漸層，模擬紐莫菲柔和發光質感；chartArea 在圖表第一次版面配置完成前是
+    // undefined，這裡做防護直接回傳純色，避免初次繪製時噴 undefined 錯誤。
+    function getBarGradient(ctx, chartArea, colorRgb, isHorizontal, stops) {
+      if (!chartArea) return 'rgba(' + colorRgb + ',' + stops[2] + ')';
+      const gradient = isHorizontal
+        ? ctx.createLinearGradient(chartArea.left, 0, chartArea.right, 0)
+        : ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
+      gradient.addColorStop(0, 'rgba(' + colorRgb + ',' + stops[0] + ')');
+      gradient.addColorStop(0.5, 'rgba(' + colorRgb + ',' + stops[1] + ')');
+      gradient.addColorStop(1, 'rgba(' + colorRgb + ',' + stops[2] + ')');
+      return gradient;
+    }
+    // 柔光 plugin：在 Chart.js 真正畫柱子「之前」，先手動依每根柱子自己的像素位置畫一層
+    // 半透明色塊＋陰影模糊，當作墊在柱子底下的光暈；每根柱子的陰影色可以逐一指定
+    // （dataset.glowColors 陣列，依 index 對應），沒有陣列就退回 dataset.glowColor 整個
+    // dataset 共用一色，兩者都沒設定才用中性深色。用手動畫色塊而不是整個 dataset 共用一次
+    // shadowColor，是因為 Chart.js 沒有「每根柱子各自陰影色」的內建掛鉤，必須自己算出每根
+    // 柱子的像素幾何（垂直/水平兩種方向分開處理）才能做到逐柱不同色。
+    function resolveGlowColor(ds, index) {
+      if (Array.isArray(ds.glowColors)) return ds.glowColors[index] || 'rgba(0,0,0,0.35)';
+      return ds.glowColor || 'rgba(0,0,0,0.35)';
+    }
+    const barGlowPlugin = {
+      id: 'barGlow',
+      beforeDatasetsDraw(chart) {
+        const ctx = chart.ctx;
+        const horizontal = chart.options.indexAxis === 'y';
+        chart.data.datasets.forEach((ds, dsIndex) => {
+          const meta = chart.getDatasetMeta(dsIndex);
+          if (meta.hidden) return;
+          meta.data.forEach((el, i) => {
+            if (!el) return;
+            let x, y, w, h;
+            if (horizontal) {
+              x = Math.min(el.x, el.base);
+              y = el.y - el.height / 2;
+              w = Math.abs(el.x - el.base);
+              h = el.height;
+            } else {
+              x = el.x - el.width / 2;
+              y = Math.min(el.y, el.base);
+              w = el.width;
+              h = Math.abs(el.base - el.y);
+            }
+            if (w <= 0 || h <= 0) return;
+            const glowColor = resolveGlowColor(ds, i);
+            ctx.save();
+            ctx.shadowColor = glowColor;
+            ctx.shadowBlur = 10;
+            ctx.fillStyle = glowColor;
+            ctx.fillRect(x, y, w, h);
+            ctx.restore();
+          });
+        });
+      },
+    };
+
     // ===== 情緒分析 tab：意圖分佈 =====
+    const intentColorsRgb = ['255,107,107', '0,221,205', '198,242,78', '91,98,114'];
     const intentChartInstance = new Chart(document.getElementById('intentChart'), {
       type: 'bar',
       data: {
         labels: dataset.intentOrder,
         datasets: [{
           data: dataset.intentOrder.map(k => dataset.intentStatsByRange.all[k] || 0),
-          backgroundColor: ['#ff6b6b', '#00DDCD', '#c6f24e', '#5b6272'],
+          backgroundColor: (context) => {
+            const chart = context.chart;
+            const rgb = intentColorsRgb[context.dataIndex] || '198,242,78';
+            return getBarGradient(chart.ctx, chart.chartArea, rgb, true, [0.05, 0.4, 1]);
+          },
+          borderRadius: { topRight: 4, bottomRight: 4 },
+          glowColors: intentColorsRgb.map(rgb => 'rgba(' + rgb + ',0.3)'),
         }],
       },
       options: {
@@ -4319,6 +4384,7 @@
           openReviewDrawer(intentKey, '共 ' + matched.length + ' 則', matched);
         },
       },
+      plugins: [barGlowPlugin],
     });
 
     document.querySelectorAll('#intentTimeRangeToggleGroup .toggle-btn').forEach(btn => {
@@ -4341,15 +4407,23 @@
           {
             label: '負面',
             data: dataset.stageOrder.map(s => dataset.stageStatsByRange.all[s].negative),
-            backgroundColor: '#ff6b6b',
-            borderRadius: { topLeft: 3, topRight: 3 },
+            backgroundColor: (context) => {
+              const chart = context.chart;
+              return getBarGradient(chart.ctx, chart.chartArea, '255,107,107', false, [0.05, 0.45, 0.95]);
+            },
+            borderRadius: { topLeft: 4, topRight: 4 },
+            glowColor: 'rgba(255,107,107,0.3)',
             sentimentKey: 'negative',
           },
           {
             label: '正面',
             data: dataset.stageOrder.map(s => dataset.stageStatsByRange.all[s].positive),
-            backgroundColor: '#c6f24e',
-            borderRadius: { topLeft: 3, topRight: 3 },
+            backgroundColor: (context) => {
+              const chart = context.chart;
+              return getBarGradient(chart.ctx, chart.chartArea, '198,242,78', false, [0.05, 0.45, 0.95]);
+            },
+            borderRadius: { topLeft: 4, topRight: 4 },
+            glowColor: 'rgba(198,242,78,0.3)',
             sentimentKey: 'positive',
           },
         ],
@@ -4375,6 +4449,7 @@
           openReviewDrawer(stage, sentimentLabelMap[sentimentKey] + '　共 ' + matched.length + ' 則', matched);
         },
       },
+      plugins: [barGlowPlugin],
     });
 
     document.querySelectorAll('#stageTimeRangeToggleGroup .toggle-btn').forEach(btn => {
@@ -4996,7 +5071,12 @@
             labels: shownWords.map(w => w.word),
             datasets: [{
               data: shownWords.map(w => w.count),
-              backgroundColor: '#C6F24E',
+              backgroundColor: (context) => {
+                const chart = context.chart;
+                return getBarGradient(chart.ctx, chart.chartArea, '198,242,78', true, [0.05, 0.4, 1]);
+              },
+              borderRadius: { topRight: 4, bottomRight: 4 },
+              glowColor: 'rgba(198,242,78,0.3)',
             }],
           },
           options: {
@@ -5015,6 +5095,7 @@
               openReviewDrawer('包含「' + w.word + '」的評論', '共 ' + matched.length + ' 則', matched);
             },
           },
+          plugins: [barGlowPlugin],
         });
 
         if (words.length <= COLLAPSED_COUNT) {
