@@ -344,8 +344,9 @@ function computeJourneyPainPoints(reviews) {
     const android = matched.filter((r) => r.platform === 'android').length;
     const ios = matched.filter((r) => r.platform === 'ios').length;
 
-    // 滿意度分數用「這個分類底下所有評論（不只負評）」的平均星等去換算，
-    // 不能只看負評數量，否則評論量大的分類會被誤判成「更不滿意」。
+    // avgScore（原始平均星等）用「這個分類底下所有評論（不只負評）」去算，
+    // 不能只看負評數量，否則評論量大的分類會被誤判成阻力更大。
+    // 這個原始星等會在前端 stageFriction() 被反轉成阻力指數（5 - avgScore），分數越高代表阻力越大。
     const allMatched = reviews.filter((r) => r.categories.includes(item.category) && typeof r.score === 'number');
     const allCount = allMatched.length;
     const avgScore = allCount > 0 ? allMatched.reduce((s, r) => s + r.score, 0) / allCount : null;
@@ -891,6 +892,14 @@ function renderHtml(dataset) {
        --ios 是「iOS平台識別色」，語意上跟這裡「HUD網格裝飾」是兩件事，
        分開宣告之後，之後想單獨調網格線濃淡/色相，不會不小心牽動到iOS相關UI的顏色。 */
     --hud-grid: 0, 221, 205;
+    /* ===== 全站 Tooltip 統一視覺變數：.info-hint-pop（標題旁ⓘ說明）跟 [data-tooltip]（數據點懸浮標記）
+       兩套機制共用同一組底色/邊框/陰影/字體/圓角，避免兩邊各自維護一份、視覺跑掉。 ===== */
+    --tooltip-bg: #11151d;
+    --tooltip-text: #e8e9ed;
+    --tooltip-border: rgba(var(--hud-glow), 0.35);
+    --tooltip-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 12px rgba(var(--hud-glow), 0.15);
+    --tooltip-radius: 6px;
+    --tooltip-font: "JetBrains Mono", -apple-system, sans-serif;
   }
   .mono{
     font-family: "JetBrains Mono", "Space Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -922,10 +931,25 @@ function renderHtml(dataset) {
   .info-hint:hover, .info-hint.open{ color:rgb(var(--hud-glow)); }
   .info-hint-pop{
     display:none; position:absolute; z-index:40; top:22px; left:50%; transform:translateX(-50%);
-    width:260px; background:#11151d; border:1px solid rgba(var(--hud-glow),0.35);
-    border-radius:8px; padding:10px 12px; font-size:11.5px; line-height:1.6; color:var(--muted);
+    width:260px; max-width:calc(100vw - 24px); background:var(--tooltip-bg);
+    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+    border:1px solid var(--tooltip-border); border-radius:var(--tooltip-radius);
+    padding:10px 12px; font-family:var(--tooltip-font); font-size:11px; line-height:1.6; color:var(--tooltip-text);
     font-weight:400; text-transform:none; letter-spacing:normal; cursor:default;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4), 0 0 12px rgba(var(--hud-glow),0.12);
+    box-shadow:var(--tooltip-shadow);
+  }
+  /* 尖端指向標：預設往下展開，箭頭朝上指回 ⓘ；.flip-up（貼近螢幕底部時由 JS 加上）則反過來往上展開，箭頭朝下 */
+  .info-hint-pop::after{
+    content:''; position:absolute; bottom:100%; left:50%; transform:translateX(-50%);
+    width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent;
+    border-bottom:4px solid var(--tooltip-bg);
+    filter:drop-shadow(0 -2px 2px rgba(var(--hud-glow),0.18));
+  }
+  .info-hint-pop.flip-up{ top:auto; bottom:22px; }
+  .info-hint-pop.flip-up::after{
+    bottom:auto; top:100%;
+    border-bottom:none; border-top:4px solid var(--tooltip-bg);
+    filter:drop-shadow(0 2px 2px rgba(var(--hud-glow),0.18));
   }
   .info-hint.open .info-hint-pop{ display:block; }
   @media (hover:hover){
@@ -2065,31 +2089,58 @@ function renderHtml(dataset) {
       color:#C6F24E;
     }
     /* 明細 tooltip：懸浮顯示分類全名／負評則數／總則數／平均星等，
-       純 CSS attr() 實作（內容來自 data-tooltip），不需要額外 JS 事件監聽 */
-    .pain-point-row[data-tooltip]::before {
+       純 CSS attr() 實作（內容來自 data-tooltip），不需要額外 JS 事件監聽；
+       視覺樣式統一沿用全站 tooltip 變數（--tooltip-*），跟標題旁 .info-hint-pop 共用同一套底色/邊框/陰影/字體。 */
+    .pain-point-row[data-tooltip]::before,
+    .jp-friction-cell[data-tooltip]::before {
       content: attr(data-tooltip);
       position:absolute;
       left:50%;
       bottom:100%;
       transform: translate(-50%, -6px);
-      background:#11151d;
-      color:#e8e9ed;
+      background:var(--tooltip-bg);
+      backdrop-filter:blur(8px);
+      -webkit-backdrop-filter:blur(8px);
+      color:var(--tooltip-text);
       font-size:10.5px;
-      font-family:"JetBrains Mono", ui-monospace, monospace;
+      font-family:var(--tooltip-font);
       letter-spacing:0.01em;
       padding:6px 10px;
-      border-radius:6px;
-      border:1px solid rgba(198, 242, 78, 0.35);
-      box-shadow: 0 8px 20px rgba(0,0,0,0.4), 0 0 10px rgba(198, 242, 78, 0.12);
+      border-radius:var(--tooltip-radius);
+      border:1px solid var(--tooltip-border);
+      box-shadow:var(--tooltip-shadow);
       white-space:nowrap;
       pointer-events:none;
       opacity:0;
       z-index:5;
       transition: opacity 0.15s ease, transform 0.15s ease;
     }
-    .pain-point-row[data-tooltip]:hover::before {
+    /* 尖端指向標：tooltip 在上方展開，箭頭朝下指回數據點本身 */
+    .pain-point-row[data-tooltip]::after,
+    .jp-friction-cell[data-tooltip]::after {
+      content:'';
+      position:absolute;
+      left:50%;
+      bottom:100%;
+      transform: translate(-50%, -10px);
+      width:0; height:0;
+      border-left:4px solid transparent;
+      border-right:4px solid transparent;
+      border-top:4px solid var(--tooltip-bg);
+      filter:drop-shadow(0 2px 2px rgba(var(--hud-glow),0.18));
+      pointer-events:none;
+      opacity:0;
+      z-index:6;
+      transition: opacity 0.15s ease;
+    }
+    .pain-point-row[data-tooltip]:hover::before,
+    .jp-friction-cell[data-tooltip]:hover::before {
       opacity:1;
       transform: translate(-50%, -10px);
+    }
+    .pain-point-row[data-tooltip]:hover::after,
+    .jp-friction-cell[data-tooltip]:hover::after {
+      opacity:1;
     }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -2412,8 +2463,9 @@ function renderHtml(dataset) {
   .jp-icon{ width:16px; height:16px; border-radius:4px; display:inline-flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; color:#111; }
   .jp-divider-v{ width:1px; height:20px; background:var(--border); }
   .jp-filter-group{ display:flex; align-items:center; gap:8px; }
-  .jp-chip{ display:flex; align-items:center; gap:5px; padding:4px 10px; border-radius:14px; border:1px solid var(--border); cursor:pointer; color:var(--muted); user-select:none; background:var(--card); }
-  .jp-chip.active{ color:var(--text); border-color:currentColor; }
+  .jp-chip{ display:flex; align-items:center; gap:5px; padding:4px 10px; border-radius:14px; border:1px solid var(--border); cursor:pointer; color:var(--muted); user-select:none; background:var(--card); transition:opacity .15s ease, border-color .15s ease, color .15s ease; }
+  .jp-chip.active{ color:var(--text); border-color:currentColor; opacity:1; }
+  .jp-chip:not(.active){ opacity:0.35; border-color:rgba(255,255,255,0.15); }
   .jp-dot{ width:9px; height:9px; border-radius:50%; }
 
   .jp-board-section{ width:100%; }
@@ -2440,7 +2492,14 @@ function renderHtml(dataset) {
     .jp-expandable-card:hover h2 { color: #C6F24E; transition: color 0.2s ease; }
   }
 
-  .jp-board-wrap{ overflow-x:auto; padding-bottom:14px; }
+  .jp-board-wrap{
+    overflow-x:auto; padding-bottom:14px;
+    /* 底部這條是瀏覽器原生捲軸，跟其他HUD卡片（如 .led-track-scroll）的處理方式一致：
+       視覺上太搶眼、跟深色科技感不搭，所以隱藏掉。捲動功能還在（滑鼠拖曳/觸控滑動/
+       左右鍵都可以），右邊卡片被切一半的樣子本身就是「還有內容可以滑」的提示。 */
+    scrollbar-width:none; -ms-overflow-style:none; -webkit-overflow-scrolling:touch;
+  }
+  .jp-board-wrap::-webkit-scrollbar{ display:none; }
   .jp-board{ min-width:1080px; position:relative; }
   .jp-macro-divider{ position:absolute; top:0; width:1px; background:rgba(255,255,255,0.12); pointer-events:none; z-index:1; }
   .jp-row{ display:flex; gap:8px; align-items:stretch; padding:12px 0; }
@@ -2451,16 +2510,23 @@ function renderHtml(dataset) {
   .jp-row-label .jp-arrow.open{ transform:rotate(180deg); }
   .jp-grid{ display:grid; grid-template-columns:repeat(14,1fr); gap:6px; flex:1; }
 
-  .jp-macro-cell{ border-radius:6px; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; min-height:32px; letter-spacing:0.04em; color:#111; background:#C6F24E; }
+  .jp-macro-cell{
+    position:relative; border-radius:6px; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:2px; min-height:32px; padding:4px 2px; overflow:hidden;
+    background:rgba(var(--hud-glow),0.06); border:1px solid rgba(255,255,255,0.07);
+  }
+  .jp-macro-index{ font-family:"JetBrains Mono", ui-monospace, monospace; font-size:8px; letter-spacing:0.1em; color:rgb(var(--hud-grid)); opacity:0.85; text-transform:uppercase; position:relative; z-index:1; }
+  .jp-macro-label{ font-size:12px; font-weight:600; letter-spacing:0.05em; color:rgb(var(--hud-glow)); position:relative; z-index:1; }
   .jp-stage-cell{ background:#3a4560; border-radius:6px; color:#fff; font-size:9.5px; font-weight:600; text-align:center; display:flex; align-items:center; justify-content:center; min-height:36px; padding:4px 2px; transition:box-shadow .3s; }
   .jp-stage-cell.flash{ box-shadow:0 0 0 2px var(--android); }
   .jp-channel-cell{ font-size:9px; color:var(--muted); text-align:center; display:flex; align-items:center; justify-content:center; min-height:20px; }
   .jp-flow-cell{ font-size:9px; color:var(--muted); text-align:center; display:flex; align-items:center; justify-content:center; line-height:1.35; padding:5px 3px; min-height:40px; }
 
   .jp-action-cell{ background:var(--card); border:1px solid var(--border); border-radius:8px; min-height:96px; display:flex; flex-direction:column; justify-content:flex-end; padding:8px 5px 0; position:relative; overflow:hidden; }
-  .jp-action-cell.jp-empty-stage{ opacity:0.45; }
+  .jp-action-cell.jp-empty-stage{ background:transparent; border:1px dashed rgba(255,255,255,0.12); justify-content:center; }
   .jp-action-top{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; min-height:34px; }
-  .jp-no-data{ font-size:9px; color:var(--muted); }
+  .jp-no-data{ font-family:"JetBrains Mono", ui-monospace, monospace; font-size:8px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase; opacity:0.7; }
+  .jp-ghost-code{ font-family:"JetBrains Mono", ui-monospace, monospace; font-size:8px; letter-spacing:0.1em; color:rgba(255,255,255,0.22); text-transform:uppercase; }
   .jp-dots{ display:flex; flex-wrap:wrap; gap:3px; justify-content:center; }
   .jp-point{ border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:7.5px; font-weight:700; color:#111; cursor:pointer; border:1.5px solid rgba(255,255,255,0.25); transition:transform .12s; }
   .jp-point:hover{ transform:scale(1.18); }
@@ -2468,11 +2534,12 @@ function renderHtml(dataset) {
   .jp-mini-bar-fill{ height:100%; border-radius:2px; }
   .jp-total-count{ font-size:9px; color:var(--muted); text-align:center; padding:4px 0 6px; }
 
-  .jp-satisfaction-cell{ background:var(--card); border:1px solid var(--border); border-radius:8px; min-height:64px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:8px 5px; }
-  .jp-satisfaction-score{ font-size:18px; font-weight:700; line-height:1; }
-  .jp-satisfaction-scale{ font-size:9px; color:var(--muted); margin-top:-2px; }
-  .jp-satisfaction-track{ width:80%; height:5px; background:var(--bg); border-radius:3px; overflow:hidden; margin-top:4px; }
-  .jp-satisfaction-fill{ height:100%; border-radius:3px; }
+  .jp-friction-cell{ position:relative; background:var(--card); border:1px solid var(--border); border-radius:8px; min-height:64px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:8px 5px; }
+  .jp-friction-cell.jp-friction-empty{ background:transparent; border:1px dashed rgba(255,255,255,0.12); }
+  .jp-friction-score{ font-size:18px; font-weight:700; line-height:1; }
+  .jp-friction-scale{ font-size:9px; color:var(--muted); margin-top:-2px; letter-spacing:0.02em; }
+  .jp-friction-track{ width:80%; height:5px; background:var(--bg); border-radius:3px; overflow:hidden; margin-top:4px; }
+  .jp-friction-fill{ height:100%; border-radius:3px; }
 
   .jp-row-label.jp-row-label-stacked{ flex-direction:column; align-items:flex-start; justify-content:center; gap:2px; }
   .jp-row-label-main{ font-weight:600; color:var(--text); }
@@ -2908,21 +2975,14 @@ function renderHtml(dataset) {
     <div class="chart-card">
       <div class="jp-card-head">
         <div class="jp-card-head-title">
-          <h2 style="margin:0">互動式服務藍圖</h2>
-          <div class="note" style="margin-top:4px;">點擊圓點查看該痛點的實際評論；點擊右側圖表的項目會反過來highlight對應階段</div>
+          <h2 style="margin:0">互動式服務藍圖 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">點擊藍圖裡的圓點可查看該痛點的實際評論；點擊右側「流程複雜度×痛點密集度」象限圖或「痛點排行榜」的項目，會反過來讓藍圖對應階段亮起提示。右上角的篩選器（F/D/W、Android/iOS）會同步套用到藍圖、象限圖與排行榜三個區塊。</div></span></h2>
         </div>
         <div class="jp-card-head-tools">
           <div class="jp-toolbar">
-            <div class="jp-legend-group">
-              <div class="jp-legend-item"><span class="jp-icon" style="background:var(--neg)">✕</span> 失敗點 F</div>
-              <div class="jp-legend-item"><span class="jp-icon" style="background:#ffd23f">D</span> 決策點 D</div>
-              <div class="jp-legend-item"><span class="jp-icon" style="background:#7ee27e">W</span> 等待點 W</div>
-            </div>
-            <div class="jp-divider-v"></div>
             <div class="jp-filter-group" id="jpTypeFilters">
-              <label class="jp-chip active" data-type="F"><span class="jp-dot" style="background:var(--neg)"></span>顯示F</label>
-              <label class="jp-chip active" data-type="D"><span class="jp-dot" style="background:#ffd23f"></span>顯示D</label>
-              <label class="jp-chip active" data-type="W"><span class="jp-dot" style="background:#7ee27e"></span>顯示W</label>
+              <label class="jp-chip active" data-type="F"><span class="jp-dot" style="background:var(--neg)"></span>失敗點 F</label>
+              <label class="jp-chip active" data-type="D"><span class="jp-dot" style="background:#ffd23f"></span>決策點 D</label>
+              <label class="jp-chip active" data-type="W"><span class="jp-dot" style="background:#7ee27e"></span>等待點 W</label>
             </div>
             <div class="jp-divider-v"></div>
             <div class="jp-filter-group" id="jpPlatformFilters">
@@ -2930,7 +2990,6 @@ function renderHtml(dataset) {
               <label class="jp-chip active" data-platform="ios"><span class="jp-dot" style="background:var(--ios)"></span>iOS</label>
             </div>
           </div>
-          <div class="note" style="margin-top:6px; text-align:right;">篩選同步套用到下方「流程複雜度×痛點密集度」與「痛點排行榜」</div>
         </div>
       </div>
 
@@ -2948,7 +3007,7 @@ function renderHtml(dataset) {
               <li><b>渠道</b>：使用者在這個階段是透過APP、實體車輛、還是客服管道接觸產品</li>
               <li><b>行為流程</b>：這個階段使用者實際做的事</li>
               <li><b>顧客行動</b>：熱力色階代表負評密集度，圓點代表個別痛點分類，大小＝評論數，點擊可看實際評論</li>
-              <li><b>滿意度</b>：該階段對應分類的平均星等換算成0~5分，0最不滿意、5最滿意</li>
+              <li><b>阻力指數（Friction Index）</b>：以「5 － 該階段對應分類的加權平均星等」計算，數值大約落在 0～4，數字越高代表該環節阻力/痛點越大；因為資料源是商店評論，本身就偏向「有問題才留言」，所以用「阻力」而非「滿意度」呈現，避免全站分數看起來都不及格</li>
             </ul>
           </div>
           <div class="jp-info-section">
@@ -4357,30 +4416,26 @@ function renderHtml(dataset) {
         return scale[idx];
       }
 
-      // 滿意度分數：用分類的平均星等（1~5星，不限負評）換算成0~5分（1星=0分，5星=5分），
-      // 同一階段有多個分類時，依各分類的評論則數加權平均。
-      function stageSatisfaction(stage) {
+      // 阻力指數（Friction Index）：用「痛感反轉」邏輯，把原本的平均星等（1~5星，不限負評）
+      // 反轉成「分數越高、阻力越大」——frictionScore = 5 - 加權平均星等（同一階段有多個分類時，
+      // 依各分類的評論則數加權平均）。範圍大約落在 0（近5星，順暢）～4（近1星，卡關嚴重）。
+      // 這樣設計是因為商店評論資料本身就是「報憂不報喜」的負偏態樣本，用正向的「滿意度」
+      // 呈現容易讓幾乎每個環節都顯示不及格分數，反而失真；改用「阻力」更貼近資料本質。
+      function stageFriction(stage) {
         const pts = pointsFor(stage).filter(p => p.avgScore !== null && p.allCount > 0);
         if (!pts.length) return null;
         const totalCount = pts.reduce((s, p) => s + p.allCount, 0);
         if (totalCount === 0) return null;
         const weightedAvgStar = pts.reduce((s, p) => s + p.avgScore * p.allCount, 0) / totalCount;
-        return (weightedAvgStar - 1) / 4 * 5;
+        return 5 - weightedAvgStar;
       }
-      function satisfactionColor(score) {
-        // 0分=紅、2.5分=黃、5分=綠，線性漸層
-        const stops = [
-          { at: 0, color: [232, 50, 31] },
-          { at: 2.5, color: [232, 178, 31] },
-          { at: 5, color: [126, 226, 126] },
-        ];
-        let a = stops[0], b = stops[stops.length - 1];
-        for (let i = 0; i < stops.length - 1; i++) {
-          if (score >= stops[i].at && score <= stops[i + 1].at) { a = stops[i]; b = stops[i + 1]; break; }
-        }
-        const t = b.at === a.at ? 0 : (score - a.at) / (b.at - a.at);
-        const rgb = a.color.map((c, i) => Math.round(c + (b.color[i] - c) * t));
-        return 'rgb(' + rgb.join(',') + ')';
+      function frictionColor(score) {
+        // 阻力分級（越高越嚴重），跟 F/D/W 三種痛點類型呼應：
+        // 重度阻礙(>=3.0)=警示紅，對齊密集的F失敗點；中度摩擦(1.5~3.0)=琥珀橘，對齊D/W決策與等待點；
+        // 輕微或良好(<1.5)=全站主色萊姆綠。
+        if (score >= 3.0) return '#FF3860';
+        if (score >= 1.5) return '#FFB000';
+        return 'rgb(var(--hud-glow))';
       }
 
       function openJourneyDrawer(p) {
@@ -4416,14 +4471,31 @@ function renderHtml(dataset) {
         });
       }
 
-      function buildRow(labelText, withDivider, subLabel) {
+      function buildRow(labelText, withDivider, subLabel, infoHint) {
         const row = document.createElement('div');
         row.className = 'jp-row' + (withDivider ? ' jp-section-divider' : '');
         const labelClass = subLabel ? 'jp-row-label jp-row-label-stacked' : 'jp-row-label';
+        const hintHtml = infoHint
+          ? '<span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">' + infoHint + '</div></span>'
+          : '';
         const labelHtml = subLabel
-          ? '<span class="jp-row-label-main">' + labelText + '</span><span class="jp-row-sublabel">' + subLabel + '</span>'
-          : '<span>' + labelText + '</span>';
+          ? '<span class="jp-row-label-main">' + labelText + hintHtml + '</span><span class="jp-row-sublabel">' + subLabel + '</span>'
+          : '<span>' + labelText + hintHtml + '</span>';
         row.innerHTML = '<div class="' + labelClass + '">' + labelHtml + '</div><div class="jp-grid"></div>';
+        // 這個 row 是每次 renderBoard() 重新 createElement 出來的新節點，
+        // 不能靠底部那個「頁面載入時跑一次」的全域 info-hint 監聽器（那個只綁得到初次渲染時就存在的節點），
+        // 所以在這裡直接對新建立的 .info-hint 補上點擊切換（觸控裝置用），桌機 hover 由 CSS 處理。
+        const hintEl = row.querySelector('.info-hint');
+        if (hintEl) {
+          hintEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const wasOpen = hintEl.classList.contains('open');
+            document.querySelectorAll('.info-hint.open').forEach(o => { if (o !== hintEl) o.classList.remove('open'); });
+            hintEl.classList.toggle('open', !wasOpen);
+            if (!wasOpen) adjustInfoHintPop(hintEl);
+          });
+          hintEl.addEventListener('mouseenter', () => adjustInfoHintPop(hintEl));
+        }
         return row;
       }
 
@@ -4433,11 +4505,14 @@ function renderHtml(dataset) {
 
         const macroRow = buildRow('', false);
         const macroGrid = macroRow.querySelector('.jp-grid');
+        let macroPhaseCounter = 0;
         macroGroups.forEach(g => {
           const cell = document.createElement('div');
           cell.className = 'jp-macro-cell';
           cell.style.gridColumn = 'span ' + g.span;
-          cell.textContent = g.label;
+          // 「客服」不算流程階段，獨立標成 SUPPORT；其餘依序編號 PHASE 01/02/03...，強化航段儀表感
+          const indexText = g.label === '客服' ? 'SUPPORT' : 'PHASE ' + String(++macroPhaseCounter).padStart(2, '0');
+          cell.innerHTML = '<span class="jp-macro-index">' + indexText + '</span><span class="jp-macro-label">' + g.label + '</span>';
           macroGrid.appendChild(cell);
         });
         board.appendChild(macroRow);
@@ -4488,16 +4563,14 @@ function renderHtml(dataset) {
           cell.style.background = pts.length ? heatColor(ratio) : 'var(--card)';
 
           if (!hasAnyMapping) {
-            cell.innerHTML = '<div class="jp-action-top"><div class="jp-no-data">無對應分類</div></div>' +
-              '<div class="jp-mini-bar-track"><div class="jp-mini-bar-fill" style="width:0%"></div></div>' +
-              '<div class="jp-total-count">—</div>';
+            cell.innerHTML = '<div class="jp-action-top"><div class="jp-ghost-code">N/A</div></div>';
           } else {
             const dotsHtml = pts.map(p => {
               const vc = pointVisibleCount(p);
               const size = 13 + Math.round((vc / maxPointCount) * 13);
               return '<div class="jp-point" data-code="' + p.code + '" style="width:' + size + 'px;height:' + size + 'px;background:' + typeColor[p.type] + ';font-size:' + Math.max(7, size * 0.38) + 'px;">' + p.code + '</div>';
             }).join('');
-            cell.innerHTML = '<div class="jp-action-top"><div class="jp-dots">' + (dotsHtml || '<span class="jp-no-data">已篩選為空</span>') + '</div></div>' +
+            cell.innerHTML = '<div class="jp-action-top"><div class="jp-dots">' + (dotsHtml || '<span class="jp-no-data">FILTERED</span>') + '</div></div>' +
               '<div class="jp-mini-bar-track"><div class="jp-mini-bar-fill" style="width:' + (ratio * 100) + '%; background:' + heatColor(ratio) + '; filter:brightness(1.5);"></div></div>' +
               '<div class="jp-total-count">共 ' + total + ' 則</div>';
           }
@@ -4505,24 +4578,30 @@ function renderHtml(dataset) {
         });
         board.appendChild(actionRow);
 
-        const satisfactionRow = buildRow('滿意度', true);
-        const satisfactionGrid = satisfactionRow.querySelector('.jp-grid');
+        const frictionRow = buildRow(
+          '阻力指數', true, 'FRICTION INDEX',
+          '基於商店負評密度與星等計算，數值越高代表該環節阻力/痛點越大。公式：阻力 = 5 － 該階段加權平均星等（原始評論星等，非正向滿意度）。'
+        );
+        const frictionGrid = frictionRow.querySelector('.jp-grid');
         stages.forEach(s => {
-          const score = stageSatisfaction(s);
+          const score = stageFriction(s);
           const cell = document.createElement('div');
-          cell.className = 'jp-satisfaction-cell';
           if (score === null) {
-            cell.innerHTML = '<div class="jp-no-data">無資料</div>';
+            cell.className = 'jp-friction-cell jp-friction-empty';
+            cell.dataset.tooltip = '此階段目前無評論資料可計算阻力指數';
+            cell.innerHTML = '<div class="jp-ghost-code">CLEAR</div>';
           } else {
-            const color = satisfactionColor(score);
+            cell.className = 'jp-friction-cell';
+            cell.dataset.tooltip = 'FRICTION／5 ／基於商店負評密度與星等計算，越高代表阻力越大';
+            const color = frictionColor(score);
+            const pct = Math.max(0, Math.min(100, score / 5 * 100));
             cell.innerHTML =
-              '<div class="jp-satisfaction-score" style="color:' + color + '">' + score.toFixed(1) + '</div>' +
-              '<div class="jp-satisfaction-scale">／5</div>' +
-              '<div class="jp-satisfaction-track"><div class="jp-satisfaction-fill" style="width:' + (score / 5 * 100) + '%; background:' + color + ';"></div></div>';
+              '<div class="jp-friction-score" style="color:' + color + '">' + score.toFixed(1) + '</div>' +
+              '<div class="jp-friction-track"><div class="jp-friction-fill" style="width:' + pct + '%; background:' + color + ';"></div></div>';
           }
-          satisfactionGrid.appendChild(cell);
+          frictionGrid.appendChild(cell);
         });
-        board.appendChild(satisfactionRow);
+        board.appendChild(frictionRow);
 
         board.querySelectorAll('.jp-point[data-code]').forEach(d => {
           d.addEventListener('click', () => {
@@ -6109,9 +6188,9 @@ function renderHtml(dataset) {
           ? painPoints5.map((p) => {
               const pct = Math.max(6, Math.round((p.negativeCount / maxPainCount) * 100));
               const avgScoreStr = p.avgScore != null ? p.avgScore.toFixed(2) + '★' : '—';
-              const tooltip = p.category + ' ／ 負評 ' + p.negativeCount + ' 則' +
-                (p.totalCount != null ? ' ／ 總則數 ' + p.totalCount + ' 則' : '') +
-                ' ／ 平均 ' + avgScoreStr;
+              const tooltip = p.category + ' // 負評 ' + p.negativeCount + ' 則' +
+                (p.totalCount != null ? ' // 總則 ' + p.totalCount + ' 則' : '') +
+                ' // 均分 ' + avgScoreStr;
               return (
                 '<div class="pain-point-row" data-category="' + p.category + '" data-tooltip="' + tooltip + '">' +
                   '<div class="pain-point-label">' + p.category + '</div>' +
@@ -6583,13 +6662,35 @@ function renderHtml(dataset) {
     });
 
     // ===== 說明文字 tooltip（info-hint）：桌機可hover，觸控裝置點擊切換顯示 =====
+    // 邊界防護：tooltip 預設置中彈出，若貼近螢幕邊緣會被裁掉，開啟/hover時量測一次位置，
+    // 超出左右邊界就用 translateX 微調偏移，超出下邊界就翻轉成往上展開（.flip-up）。
+    function adjustInfoHintPop(hintEl) {
+      const pop = hintEl.querySelector('.info-hint-pop');
+      if (!pop) return;
+      pop.classList.remove('flip-up');
+      pop.style.transform = 'translateX(-50%)';
+      requestAnimationFrame(() => {
+        const margin = 12;
+        let rect = pop.getBoundingClientRect();
+        if (rect.bottom > window.innerHeight - margin) {
+          pop.classList.add('flip-up');
+          rect = pop.getBoundingClientRect();
+        }
+        let shift = 0;
+        if (rect.left < margin) shift = margin - rect.left;
+        else if (rect.right > window.innerWidth - margin) shift = (window.innerWidth - margin) - rect.right;
+        if (shift !== 0) pop.style.transform = 'translateX(calc(-50% + ' + shift + 'px))';
+      });
+    }
     document.querySelectorAll('.info-hint').forEach(el => {
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         const wasOpen = el.classList.contains('open');
         document.querySelectorAll('.info-hint.open').forEach(o => { if (o !== el) o.classList.remove('open'); });
         el.classList.toggle('open', !wasOpen);
+        if (!wasOpen) adjustInfoHintPop(el);
       });
+      el.addEventListener('mouseenter', () => adjustInfoHintPop(el));
     });
     document.addEventListener('click', () => {
       document.querySelectorAll('.info-hint.open').forEach(o => o.classList.remove('open'));
