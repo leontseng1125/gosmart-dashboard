@@ -3691,7 +3691,16 @@ function renderHtml(dataset) {
             legend: {
               display: true,
               position: 'bottom',
-              labels: { color: '#9aa0ac', font: { family: 'JetBrains Mono, monospace', size: 10 }, boxWidth: 12, padding: 12 },
+              align: 'center',
+              labels: {
+                color: '#9aa0ac',
+                font: { family: 'JetBrains Mono, monospace', size: 10 },
+                usePointStyle: true,
+                pointStyle: 'rect',
+                boxWidth: 10,
+                boxHeight: 10,
+                padding: 12,
+              },
             },
             tooltip: {
               animation: { duration: 0 }, // 掃描光效果已改成畫在獨立疊加canvas（見createEffectOverlay），不再跟這裡的tooltip搶畫布；保留不淡入純粹是喜歡這個顯示效果
@@ -3916,7 +3925,16 @@ function renderHtml(dataset) {
             legend: {
               display: true,
               position: 'bottom',
-              labels: { color: '#9aa0ac', font: { family: 'JetBrains Mono, monospace', size: 10 }, boxWidth: 10, padding: 10 },
+              align: 'center',
+              labels: {
+                color: '#9aa0ac',
+                font: { family: 'JetBrains Mono, monospace', size: 10 },
+                usePointStyle: true,
+                pointStyle: 'rect',
+                boxWidth: 10,
+                boxHeight: 10,
+                padding: 12,
+              },
             },
             tooltip: {
               animation: { duration: 0 }, // 光點+漣漪效果已改成畫在獨立疊加canvas（見createEffectOverlay），不再跟這裡的tooltip搶畫布；保留不淡入純粹是喜歡這個顯示效果
@@ -5053,7 +5071,22 @@ function renderHtml(dataset) {
           x: { stacked: true, ticks: { color: '#9aa0ac' }, grid: { display: false } },
           y: { stacked: true, ticks: { color: '#9aa0ac' }, grid: { color: '#2a2e38' } },
         },
-        plugins: { legend: { labels: { color: '#e8e9ed' } } },
+        plugins: {
+          legend: {
+            display: true,
+            position: 'bottom',
+            align: 'center',
+            labels: {
+              color: '#9aa0ac',
+              font: { family: 'JetBrains Mono, monospace', size: 10 },
+              usePointStyle: true,
+              pointStyle: 'rect',
+              boxWidth: 10,
+              boxHeight: 10,
+              padding: 12,
+            },
+          },
+        },
         onClick: (evt, elements) => {
           if (!elements.length) return;
           if (evt.native) evt.native.stopPropagation();
@@ -5272,10 +5305,7 @@ function renderHtml(dataset) {
           {
             label: '負面',
             data: dataset.stageOrder.map(s => dataset.stageStatsByRange.all[s].negative),
-            backgroundColor: (context) => {
-              const chart = context.chart;
-              return getBarGradient(chart.ctx, chart.chartArea, '255,107,107', false, [0.05, 0.45, 0.95]);
-            },
+            backgroundColor: '#ff6b6b',
             borderRadius: { topLeft: 4, topRight: 4 },
             glowColor: 'rgba(255,107,107,0.3)',
             sentimentKey: 'negative',
@@ -5283,10 +5313,7 @@ function renderHtml(dataset) {
           {
             label: '正面',
             data: dataset.stageOrder.map(s => dataset.stageStatsByRange.all[s].positive),
-            backgroundColor: (context) => {
-              const chart = context.chart;
-              return getBarGradient(chart.ctx, chart.chartArea, '198,242,78', false, [0.05, 0.45, 0.95]);
-            },
+            backgroundColor: '#c6f24e',
             borderRadius: { topLeft: 4, topRight: 4 },
             glowColor: 'rgba(198,242,78,0.3)',
             sentimentKey: 'positive',
@@ -5302,7 +5329,22 @@ function renderHtml(dataset) {
           x: { stacked: false, ticks: { color: '#9aa0ac' }, grid: { display: false } },
           y: { stacked: false, ticks: { color: '#9aa0ac' }, grid: { color: '#2a2e38' } },
         },
-        plugins: { legend: { labels: { color: '#e8e9ed', boxWidth: 10, boxHeight: 10 } } },
+        plugins: {
+          legend: {
+            display: true,
+            position: 'bottom',
+            align: 'center',
+            labels: {
+              color: '#9aa0ac',
+              font: { family: 'JetBrains Mono, monospace', size: 10 },
+              usePointStyle: true,
+              pointStyle: 'rect',
+              boxWidth: 10,
+              boxHeight: 10,
+              padding: 12,
+            },
+          },
+        },
         onClick: (evt, elements) => {
           if (!elements.length) return;
           if (evt.native) evt.native.stopPropagation();
@@ -5590,7 +5632,20 @@ function renderHtml(dataset) {
             },
           },
           plugins: {
-            legend: { labels: { color: '#e8e9ed' } },
+            legend: {
+              display: true,
+              position: 'bottom',
+              align: 'center',
+              labels: {
+                color: '#9aa0ac',
+                font: { family: 'JetBrains Mono, monospace', size: 10 },
+                usePointStyle: true,
+                pointStyle: 'rect',
+                boxWidth: 10,
+                boxHeight: 10,
+                padding: 12,
+              },
+            },
             tooltip: {
               callbacks: scatterTooltipCallback,
               backgroundColor: '#1f232c',
