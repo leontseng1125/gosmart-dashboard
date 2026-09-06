@@ -2148,8 +2148,14 @@ function renderHtml(dataset) {
   }
 
   .card-detail-drawer { max-height:0; overflow:hidden; transition:max-height 0.35s ease; }
-  .auto-detail-inner { padding-top:14px; margin-top:14px; border-top:1px solid var(--border); }
-  .auto-detail-table { width:100%; border-collapse:collapse; font-size:11.5px; }
+  .auto-detail-inner {
+    padding-top:14px; margin-top:14px; border-top:1px solid var(--border);
+    width:100%;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:thin;
+  }
+  .auto-detail-table { width:100%; min-width:360px; border-collapse:collapse; font-size:11.5px; }
   .auto-detail-table th, .auto-detail-table td { text-align:left; padding:7px 6px; border-bottom:1px solid var(--border); white-space:nowrap; vertical-align:top; }
   .auto-detail-table th { color:var(--muted); font-weight:500; font-size:10.5px; text-transform:uppercase; letter-spacing:0.03em; }
   .auto-detail-table tbody tr.clickable-row { cursor:pointer; }
@@ -2325,6 +2331,11 @@ function renderHtml(dataset) {
     .select-input { width: 100%; }
     .search-input-inline { width: 100%; }
     th, td { padding: 8px 6px; font-size: 12px; }
+    .auto-detail-table th,
+    .auto-detail-table td {
+      padding: 6px 4px;
+      font-size: 11px;
+    }
   }
 
   /* Chart.js tooltip 客製外觀由 canvas 內部繪製處理，此區塊為 fallback（若瀏覽器不支援 external tooltip 就不需要） */
@@ -6068,7 +6079,9 @@ function renderHtml(dataset) {
         const { card, detail } = entry;
         card.classList.add('expanded');
         requestAnimationFrame(() => {
-          detail.style.maxHeight = detail.scrollHeight + 'px';
+          // +30px 安全緩衝：手機窄螢幕文字折行造成的高度誤差，避免展開瞬間（transitionend
+          // 換成 max-height:none 之前）底部資料列被暫時性地裁掉一小截
+          detail.style.maxHeight = (detail.scrollHeight + 30) + 'px';
         });
       }
 
@@ -6100,7 +6113,7 @@ function renderHtml(dataset) {
         detail.addEventListener('transitionend', (e) => {
           if (e.propertyName !== 'max-height') return;
           if (card.classList.contains('expanded')) {
-            detail.style.maxHeight = 'none';
+            detail.style.setProperty('max-height', 'none', 'important');
           }
           // Chart.js 畫布防護：展開/收合造成版面變動時強制 resize，避免圖表寬度塌陷或變形
           const chart = typeof getChart === 'function' ? getChart() : null;
