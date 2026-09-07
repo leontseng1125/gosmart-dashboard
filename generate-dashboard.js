@@ -2629,9 +2629,170 @@ function renderHtml(dataset) {
       max-width: 100%;
     }
   }
+
+  /* ============================================================
+     HUD Boot Sequence（科幻風開場 Loading）
+     ============================================================
+     視覺變數嚴格沿用全站現有的 --bg / --hud-glow(萊姆綠) / --hud-grid(青綠)，
+     不額外新增色票，確保開場畫面跟進場之後的主畫面是同一套HUD美術語言。 */
+  #hudBootScreen {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    overflow: hidden;
+    /* 退場時整層往Y軸壓扁、模擬CRT關機收光的感覺；transform-origin置中，
+       壓扁時上下同時往中線收，而不是只往上或往下收。 */
+    transform-origin: center center;
+    will-change: transform, opacity, filter;
+  }
+  /* 開始收縮退場的瞬間就先擋掉互動事件，讓使用者可以提前點擊光幕底下已經
+     還原完成的主畫面，不需要等收縮動畫完全播完。 */
+  #hudBootScreen.is-exiting {
+    pointer-events: none;
+    animation: hudBootExit 0.5s cubic-bezier(0.7, 0, 0.84, 0) forwards;
+  }
+  @keyframes hudBootExit {
+    0%   { transform: scaleY(1);     opacity: 1; filter: brightness(1); }
+    55%  { transform: scaleY(0.05);  opacity: 1; filter: brightness(2.4); }
+    100% { transform: scaleY(0.002); opacity: 0; filter: brightness(3.2); }
+  }
+  /* 收縮過程中額外掃過一條高亮橫線，加強「CRT掃描線壓扁消散」的閃光感 */
+  .hud-boot-scanline {
+    position: absolute;
+    left: 0; right: 0; top: 50%;
+    height: 2px;
+    background: rgb(var(--hud-glow));
+    box-shadow: 0 0 18px rgba(var(--hud-glow), 0.9), 0 0 40px rgba(var(--hud-grid), 0.5);
+    opacity: 0;
+  }
+  #hudBootScreen.is-exiting .hud-boot-scanline {
+    animation: hudBootScanFlash 0.5s ease-out forwards;
+  }
+  @keyframes hudBootScanFlash {
+    0%   { opacity: 0; }
+    45%  { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  .hud-boot-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 22px;
+  }
+
+  /* 雙向旋轉的雷達校準圈：外圈虛線刻度順時針轉、內圈點狀刻度逆時針轉，
+     兩層轉速不同、方向相反，才會有「校準中」的雷達感，而不是單純轉圈裝飾。 */
+  .hud-boot-radar {
+    position: relative;
+    width: 110px;
+    height: 110px;
+  }
+  .hud-boot-radar-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+  }
+  .hud-boot-radar-ring--outer {
+    border: 2px dashed rgba(var(--hud-glow), 0.55);
+    animation: hudBootSpin 3.2s linear infinite;
+  }
+  .hud-boot-radar-ring--inner {
+    inset: 18px;
+    border: 1px dotted rgba(var(--hud-grid), 0.65);
+    animation: hudBootSpinRev 2.1s linear infinite;
+  }
+  .hud-boot-radar-core {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 6px; height: 6px;
+    margin: -3px 0 0 -3px;
+    border-radius: 50%;
+    background: rgb(var(--hud-glow));
+    box-shadow: 0 0 10px rgba(var(--hud-glow), 0.85);
+  }
+  @keyframes hudBootSpin { to { transform: rotate(360deg); } }
+  @keyframes hudBootSpinRev { to { transform: rotate(-360deg); } }
+
+  /* 點陣推進條：跟 LIVE MONITOR 關鍵字 LED 燈條同一套「逐格點亮」語彙，
+     用 --dot-delay（inline，由Node端算好每格延遲）錯開時間、由左至右推進。 */
+  .hud-boot-dots {
+    display: flex;
+    gap: 5px;
+  }
+  .hud-boot-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: rgba(var(--hud-glow), 0.12);
+    animation: hudBootDotLit 0.9s ease forwards;
+    animation-delay: var(--dot-delay, 0ms);
+  }
+  @keyframes hudBootDotLit {
+    0%   { background: rgba(var(--hud-glow), 0.12); box-shadow: none; }
+    40%  { background: rgb(var(--hud-glow)); box-shadow: 0 0 8px rgba(var(--hud-glow), 0.85); }
+    100% { background: rgba(var(--hud-glow), 0.55); box-shadow: 0 0 4px rgba(var(--hud-glow), 0.35); }
+  }
+
+  /* 終端機檢測日誌：逐字打字效果由下方內嵌腳本控制（跟全站 typeGroupTitle
+     打字動效同一套技巧），這裡只定義樣式與閃爍指標。 */
+  .hud-boot-log {
+    min-height: 34px;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    color: rgb(var(--hud-grid));
+    white-space: pre;
+  }
+  .hud-boot-log .hud-boot-caret {
+    display: inline-block;
+    width: 6px;
+    margin-left: 2px;
+    background: rgb(var(--hud-glow));
+    animation: hudBootCaretBlink 0.9s steps(1) infinite;
+  }
+  @keyframes hudBootCaretBlink { 50% { opacity: 0; } }
+
+  /* ===== 進場動畫時序防呆 =====
+     Loading遮罩還在畫面上時（body帶著 .hud-booting），先把「一次性」的
+     進場CSS動畫全部暫停在起始畫格（animation-play-state:paused，配合
+     它們原本就有的 animation-fill-mode:both，暫停時會停在0%畫格、
+     不會被瀏覽器誤判成已經播完）。等 JS 把 .hud-booting 從 body 拿掉，
+     這幾個規則就失效，動畫從暫停的0%畫格開始正式播放。
+     注意：只列出「一次性進場」動效，不能用萬用選擇器全選，否則會連同
+     雷達校準圈／掃描線等boot畫面自己的無限loop動畫也一起被暫停。 */
+  body.hud-booting .anomaly-row,
+  body.hud-booting .led-seg.is-active,
+  body.hud-booting .led-seg.is-overload,
+  body.hud-booting .group-title.caret-blink {
+    animation-play-state: paused;
+  }
 </style>
 </head>
-<body>
+<body class="hud-booting">
+  <!-- ===== HUD Boot Sequence：科幻風開場動畫，覆蓋在畫面最上層 =====
+       body 上的 .hud-booting 從 HTML 一開始就存在（不是JS事後補上去的），
+       這樣才能在瀏覽器還沒執行任何 <script> 之前就先蓋住畫面、避免FOUC，
+       也讓底下所有「一次性進場動效」的CSS animation一開始就處於paused狀態
+       （見下方 <style> 內 body.hud-booting 那組規則、以及 <script> 內 onHudBootDone 的說明）。 -->
+  <div id="hudBootScreen" aria-hidden="true">
+    <div class="hud-boot-inner">
+      <div class="hud-boot-radar">
+        <div class="hud-boot-radar-ring hud-boot-radar-ring--outer"></div>
+        <div class="hud-boot-radar-ring hud-boot-radar-ring--inner"></div>
+        <div class="hud-boot-radar-core"></div>
+      </div>
+      <div class="hud-boot-dots" id="hudBootDots">${Array.from({ length: 18 }, (_, i) =>
+        '<span class="hud-boot-dot" style="--dot-delay:' + i * 90 + 'ms"></span>'
+      ).join('')}</div>
+      <div class="hud-boot-log mono" id="hudBootLog"></div>
+    </div>
+    <div class="hud-boot-scanline"></div>
+  </div>
+
   <div class="drawer-overlay" id="drawerOverlay"></div>
   <div class="review-drawer" id="reviewDrawer">
     <div class="drawer-header">
@@ -3092,6 +3253,88 @@ function renderHtml(dataset) {
   <script>
     const dataset = ${dataJson};
 
+    // ============================================================
+    // HUD Boot Sequence：開場Loading的狀態旗標 + 「等開場結束才執行」的佇列
+    // ============================================================
+    // window.__hudBootDone 在退場動畫開始收縮的那一刻就會變成 true——
+    // 不是等收縮動畫完全播完才算數，因為需求是「光幕拉開時使用者能完整
+    // 看到這些動態效果」，也就是動效要跟收縮動畫幾乎同時起跑，不是收縮
+    // 動畫播完之後才慢半拍才觸發。
+    window.__hudBootDone = false;
+    window.__hudBootQueue = [];
+    // 任何「一次性進場動效」的觸發點，都改成呼叫這個函式，而不是直接執行：
+    // 開場還沒結束時，先把要做的事塞進佇列；開場已經結束（或使用者用了
+    // 不支援IntersectionObserver等極少數情境）時，直接立刻執行。
+    function onHudBootDone(fn) {
+      if (window.__hudBootDone) {
+        fn();
+      } else {
+        window.__hudBootQueue.push(fn);
+      }
+    }
+    function finishHudBootQueue() {
+      window.__hudBootDone = true;
+      const queued = window.__hudBootQueue;
+      window.__hudBootQueue = [];
+      queued.forEach((fn) => {
+        try { fn(); } catch (e) { /* 單一動效出錯不該擋到其他動效 */ }
+      });
+    }
+
+    // ===== 終端機檢測日誌：逐行逐字打出來，跟 typeGroupTitle 同一套技巧 =====
+    (function runHudBootLog() {
+      const logEl = document.getElementById('hudBootLog');
+      if (!logEl) return;
+      const LOG_LINES = [
+        'INITIALIZING HUD SUBSYSTEMS...',
+        'CALIBRATING BLUEPRINT MATRIX...',
+        'SYSTEM OPERATIONAL',
+      ];
+      let lineIndex = 0;
+      function typeLine() {
+        if (lineIndex >= LOG_LINES.length) return;
+        const full = LOG_LINES[lineIndex];
+        let i = 0;
+        logEl.innerHTML = '';
+        const textNode = document.createTextNode('');
+        const caret = document.createElement('span');
+        caret.className = 'hud-boot-caret';
+        logEl.appendChild(textNode);
+        logEl.appendChild(caret);
+        const timer = setInterval(() => {
+          i++;
+          textNode.textContent = full.slice(0, i);
+          if (i >= full.length) {
+            clearInterval(timer);
+            lineIndex++;
+            setTimeout(typeLine, 260); // 這一行打完，稍微停頓再打下一行（拉長配合2.5秒總時長）
+          }
+        }, 22);
+      }
+      typeLine();
+    })();
+
+    // ===== 退場觸發：總時長約2.5秒，且一定會等目前這整段同步
+    //      script（包含所有圖表建立、版面量測）執行完畢才會真正觸發，
+    //      因為setTimeout callback本質上要等目前呼叫堆疊清空才會被排入。
+    //      收尾再加兩次requestAnimationFrame，跟全站其他「等版面穩定」
+    //      的地方（如下方雙重rAF量高度）用同一套保守作法。 =====
+    function startHudBootExit() {
+      const bootScreen = document.getElementById('hudBootScreen');
+      if (bootScreen) {
+        bootScreen.classList.add('is-exiting');
+        setTimeout(() => {
+          if (bootScreen.parentNode) bootScreen.parentNode.removeChild(bootScreen);
+        }, 600); // 收縮動畫(0.5s)播完之後才把整層DOM拿掉，避免殘留透明div擋在畫面上
+      }
+      document.body.classList.remove('hud-booting');
+      finishHudBootQueue(); // 光幕開始收縮的同一刻，正式觸發KPI數字滾動／按鈕打字動效
+    }
+    setTimeout(() => {
+      requestAnimationFrame(() => requestAnimationFrame(startHudBootExit));
+    }, 2500);
+
+
     // ===== 整合式旅程痛點 tab：靜態結構設定（來自論文服務藍圖，非資料運算結果） =====
     const JOURNEY_STAGES_CLIENT = ['選擇品牌','會員註冊','審核身份','搜尋欲租車輛','預定車輛','等待取車','前往取車','取車中','使用中','準備還車','還車','付款','還車後服務','狀況排除'];
     const JOURNEY_MACRO_GROUPS_CLIENT = [
@@ -3139,6 +3382,13 @@ function renderHtml(dataset) {
     // 都知道原本完整的字是什麼，不會因為中途被清空重打而弄丟。
     function typeGroupTitle(titleEl) {
       if (!titleEl) return;
+      // HUD開場遮罩還蓋著畫面時，先不要真的把文字清空重打——不然使用者根本
+      // 看不到這段打字動效，等於在遮罩背後偷跑完。改成等 onHudBootDone
+      // 統一觸發（光幕開始收縮的同一刻），才正式播放。
+      if (!window.__hudBootDone) {
+        onHudBootDone(() => typeGroupTitle(titleEl));
+        return;
+      }
       const full = titleEl.dataset.full || titleEl.textContent;
       titleEl.dataset.full = full;
       // 防止打字過程中文字從短到長，讓按鈕的版面寬度跟著抖動——尤其小螢幕上比重較小的
@@ -3195,10 +3445,43 @@ function renderHtml(dataset) {
     }
 
     (function restoreActiveGroupAndTab() {
+      // ===== 判斷這次是「全新造訪」還是「同一分頁按F5重整」=====
+      // 主要依據：sessionStorage的存活範圍剛好就是「同一個分頁」——F5重整前後
+      // 都還在，只有分頁真的被關掉或開新分頁才會是空的，語意上比Navigation
+      // Timing API的navigation type更貼近我們想要的判斷。
+      // performance navigation type當備援訊號：sessionStorage因無痕模式等
+      // 原因不可用時，至少還能用它粗略判斷一次；兩種訊號都拿不到就保守視為
+      // 「全新造訪」，寧可多讓使用者多看一次總覽，也不要重整時不小心跳頁。
+      const VISITED_FLAG_KEY = 'gosmart-session-visited';
+      let isReload = false;
+      try {
+        if (sessionStorage.getItem(VISITED_FLAG_KEY) === '1') {
+          isReload = true;
+        } else {
+          sessionStorage.setItem(VISITED_FLAG_KEY, '1');
+        }
+      } catch (e) {
+        try {
+          const navEntry = performance.getEntriesByType('navigation')[0];
+          isReload = !!(navEntry && navEntry.type === 'reload');
+        } catch (e2) {
+          isReload = false;
+        }
+      }
+
+      // 全新造訪（新開分頁／新訪客初次進入）：savedGroup、savedTab維持null，
+      // 不去讀localStorage，下面「if (savedGroup) activateGroup(...)」與
+      // 「if (savedTab) ...」兩段自然都不會執行——頁面就停留在HTML原本
+      // 預設active的LIVE MONITOR總覽（group='live', tab=null），不需要
+      // 額外寫一條「強制導回總覽」的分支。
+      // 同分頁內F5重整：才去讀localStorage，還原重整前使用者停留的
+      // Group／Sub-tab，行為跟改版前完全一致。
       let savedGroup = null;
-      try { savedGroup = localStorage.getItem(GROUP_STORAGE_KEY); } catch (e) {}
       let savedTab = null;
-      try { savedTab = localStorage.getItem(TAB_STORAGE_KEY); } catch (e) {}
+      if (isReload) {
+        try { savedGroup = localStorage.getItem(GROUP_STORAGE_KEY); } catch (e) {}
+        try { savedTab = localStorage.getItem(TAB_STORAGE_KEY); } catch (e) {}
+      }
 
       // 相容舊資料：改版前「自動摘要」是DEEP INSIGHTS底下獨立的子分頁，
       // 現在併入「AI 洞察」分頁（連同原本常駐在tab bar上方的AI智慧洞察卡片一起收納）。
@@ -4372,7 +4655,11 @@ function renderHtml(dataset) {
               countTargets.forEach(el => {
                 const target = parseFloat(el.dataset.countTarget);
                 const decimals = parseInt(el.dataset.countDecimals, 10) || 0;
-                animateCountUp(el, target, decimals, 1600);
+                // KPI卡片一開始就在版面上、IntersectionObserver在HUD開場遮罩
+                // 還蓋著畫面時就會判定「已進入畫面」而提前觸發——這裡改成交給
+                // onHudBootDone排隊，確保數字滾動一定是在光幕收起來那一刻才開始跑，
+                // 不會在遮罩背後偷跑完。
+                onHudBootDone(() => animateCountUp(el, target, decimals, 1600));
               });
               observer.unobserve(entry.target);
             }
