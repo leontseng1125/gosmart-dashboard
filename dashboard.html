@@ -62,6 +62,7 @@
     vertical-align:middle;
     line-height:1;
     margin-left:1px;
+    pointer-events:auto; /* 明確聲明，避免日後父層誤設 pointer-events:none 把點擊吃掉 */
   }
   .info-hint:hover, .info-hint.open{ color:rgb(var(--hud-glow)); }
   .info-hint-pop{
@@ -92,6 +93,25 @@
   .jp-row-label .info-hint-pop{ left:0; transform:none; }
   .jp-row-label .info-hint-pop::after{ left:10px; transform:none; }
   .info-hint.open .info-hint-pop{ display:block; }
+  /* 小網（<=640px）：
+     1) popup 寬度用 min() 動態收窄，避免固定 260px 在窄螢幕左右溢出過多。
+     2) .jp-row-label 底下的 popup 額外切成 position:fixed —— 因為 .jp-board-wrap
+        同時設定了 overflow-x:auto，依 CSS 規範，另一軸即使寫 overflow-y:visible
+        也會被隱性轉成 auto，先前的修法實際上沒有效果，popup 只要超出可視高度依然
+        會被裁切/擠出畫面。改成 fixed 之後直接以視窗為定位基準，不再受任何父層
+        overflow 影響。實際 top/left 座標由下方 JS 的 adjustInfoHintPop() 動態計算。
+     3) .jp-row-label .info-hint 增加點擊熱區（負margin抵銷padding，不影響外觀排版），
+        方便小螢幕手指點準這個很小的 ⓘ。 */
+  @media (max-width:640px){
+    .info-hint-pop{ width:min(240px, calc(100vw - 32px)); }
+
+    .jp-row-label .info-hint-pop{
+      position:fixed; left:auto; right:auto; top:auto; transform:none; z-index:9999;
+    }
+    .jp-row-label .info-hint-pop::after{ display:none; } /* fixed定位下尖角無法保證對準ⓘ，先隱藏避免視覺錯位 */
+
+    .jp-row-label .info-hint{ padding:6px 4px; margin:-6px -4px -6px 1px; }
+  }
   @media (hover:hover){
     .info-hint:hover .info-hint-pop{ display:block; }
   }
@@ -1660,7 +1680,7 @@
   .jp-row{ display:flex; gap:8px; align-items:stretch; padding:12px 0; }
   .jp-row.jp-section-divider{ border-top:1px solid rgba(255,255,255,0.07); }
   .jp-row-label{ flex:0 0 82px; display:flex; align-items:center; justify-content:space-between; font-size:11px; color:rgb(var(--hud-glow)); padding-left:2px; }
-  .jp-row-label .jp-arrow{ cursor:pointer; color:var(--muted); font-size:12px; transition:transform .15s, color .15s; padding:4px; }
+  .jp-row-label .jp-arrow{ cursor:pointer; color:rgb(var(--hud-glow)); font-size:12px; transition:transform .15s, color .15s; padding:4px; }
   .jp-row-label .jp-arrow:hover{ color:var(--text); }
   .jp-row-label .jp-arrow.open{ transform:rotate(180deg); }
   .jp-grid{ display:grid; grid-template-columns:repeat(14,1fr); gap:6px; flex:1; }
@@ -2351,14 +2371,12 @@
 
     <div class="jp-charts-grid" id="jpChartsGrid">
       <div class="chart-card jp-expandable-card" id="jpQuadInsightCard" data-jp-key="jpquad">
-        <h2 style="margin:0 0 2px; font-size:13px;">流程複雜度 × 痛點密集度</h2>
-        <div class="note" style="margin:2px 0 8px;">X軸＝行為流程子步驟數，Y軸＝負評總則數。右上角＝優先重新設計候選；點擊資料點/下方清單可查看該階段實際負評；點擊卡片其他地方可展開放大圖表</div>
+        <h2 style="margin:0 0 2px; font-size:13px;">流程複雜度 × 痛點密集度 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">X軸＝行為流程子步驟數，Y軸＝負評總則數。右上角＝優先重新設計候選；點擊資料點/下方清單可查看該階段實際負評；點擊卡片其他地方可展開放大圖表</div></span></h2>
         <svg id="jpQuadChart" viewBox="0 0 380 300" width="100%"></svg>
         <div class="jp-priority-list" id="jpPriorityList"></div>
       </div>
       <div class="chart-card jp-expandable-card" id="jpParetoInsightCard" data-jp-key="jppareto">
-        <h2 style="margin:0 0 2px; font-size:13px;">痛點排行榜</h2>
-        <div class="note" style="margin:2px 0 8px;">依篩選後負評則數排序，點擊可查看實際評論；點擊此區塊可展開查看更多內容</div>
+        <h2 style="margin:0 0 2px; font-size:13px;">痛點排行榜 <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">依篩選後負評則數排序，點擊可查看實際評論；點擊此區塊可展開查看更多內容</div></span></h2>
         <div class="jp-pareto-list" id="jpParetoList"></div>
       </div>
     </div>
@@ -6331,7 +6349,35 @@
       // 跟其他地方「置中展開、用 translateX 微調」的模式不一樣，這裡分開處理位移方式，
       // 避免兩套邏輯互相覆寫 transform/left 打架。
       const isLeftAligned = !!hintEl.closest('.jp-row-label');
+      const isSmallScreen = window.innerWidth <= 640;
       pop.classList.remove('flip-up');
+
+      // 小網 + .jp-row-label：popup 目前是 position:fixed（見上方 CSS media query），
+      // 直接拿 hintEl 在「視窗」中的座標算 top/left 寫進 style，不吃 .info-hint 的
+      // relative 定位，也完全不受 .jp-board-wrap 內部橫向捲動位移影響（fixed 是以
+      // 視窗、不是以捲動內容為基準），藉此徹底避開 overflow-x:auto 造成的裁切問題。
+      if (isLeftAligned && isSmallScreen) {
+        const margin = 12;
+        const hintRect = hintEl.getBoundingClientRect();
+        pop.style.left = '0px';
+        pop.style.top = (hintRect.bottom + 6) + 'px';
+        requestAnimationFrame(() => {
+          let rect = pop.getBoundingClientRect();
+          if (rect.bottom > window.innerHeight - margin) {
+            // 貼近視窗底部：翻到 ⓘ 上方展開
+            pop.style.top = (hintRect.top - rect.height - 6) + 'px';
+            rect = pop.getBoundingClientRect();
+          }
+          let left = hintRect.left;
+          if (left < margin) left = margin;
+          else if (left + rect.width > window.innerWidth - margin) {
+            left = window.innerWidth - margin - rect.width;
+          }
+          pop.style.left = left + 'px';
+        });
+        return;
+      }
+
       if (isLeftAligned) {
         pop.style.left = '0px';
       } else {
