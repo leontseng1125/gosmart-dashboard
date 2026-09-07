@@ -1659,7 +1659,7 @@
   .jp-macro-divider{ position:absolute; top:0; width:1px; background:rgba(255,255,255,0.12); pointer-events:none; z-index:1; }
   .jp-row{ display:flex; gap:8px; align-items:stretch; padding:12px 0; }
   .jp-row.jp-section-divider{ border-top:1px solid rgba(255,255,255,0.07); }
-  .jp-row-label{ flex:0 0 82px; display:flex; align-items:center; justify-content:space-between; font-size:11px; color:var(--muted); padding-left:2px; }
+  .jp-row-label{ flex:0 0 82px; display:flex; align-items:center; justify-content:space-between; font-size:11px; color:rgb(var(--hud-glow)); padding-left:2px; }
   .jp-row-label .jp-arrow{ cursor:pointer; color:var(--muted); font-size:12px; transition:transform .15s, color .15s; padding:4px; }
   .jp-row-label .jp-arrow:hover{ color:var(--text); }
   .jp-row-label .jp-arrow.open{ transform:rotate(180deg); }
@@ -1702,7 +1702,7 @@
   .jp-friction-fill{ height:100%; border-radius:3px; }
 
   .jp-row-label.jp-row-label-stacked{ flex-direction:column; align-items:flex-start; justify-content:center; gap:2px; }
-  .jp-row-label-main{ font-weight:600; color:var(--text); }
+  .jp-row-label-main{ font-weight:600; color:rgb(var(--hud-glow)); }
   .jp-row-sublabel{ font-size:8px; line-height:1.35; color:var(--muted); opacity:0.85; }
 
   .jp-collapsible{ overflow:hidden; transition:max-height .2s ease; max-height:0; flex:1; }
@@ -2187,8 +2187,6 @@
 
       <div class="jp-board-section">
         <div class="jp-board-wrap"><div class="jp-board" id="jpBoard"></div></div>
-        <div class="jp-row jp-section-divider" id="jpFrontRowWrap"></div>
-        <div class="jp-row jp-section-divider" id="jpBackRowWrap"></div>
       </div>
     </div>
 
@@ -3677,6 +3675,12 @@
         return row;
       }
 
+      // 「前台互動」「後台/系統」現在跟其他列一樣是 #jpBoard 的子節點，
+      // renderBoard() 每次篩選條件變動都會整個重建 #jpBoard，
+      // 用這兩個變數記住展開/收合狀態，重建時才不會每次都被重置回收合。
+      let jpFrontOpen = false;
+      let jpBackOpen = false;
+
       function renderBoard() {
         const board = document.getElementById('jpBoard');
         board.innerHTML = '';
@@ -3726,7 +3730,7 @@
         });
         board.appendChild(flowRow);
 
-        const actionRow = buildRow('顧客行動', true, '色深=負評密度｜大小=則數');
+        const actionRow = buildRow('顧客行動', true, null, '色深=負評密度｜大小=則數');
         const actionGrid = actionRow.querySelector('.jp-grid');
         const maxStageTotal = Math.max(1, ...stages.map(stageTotal));
         const maxPointCount = Math.max(1, ...visiblePoints().map(pointVisibleCount));
@@ -3781,6 +3785,14 @@
         });
         board.appendChild(frictionRow);
 
+        // 「前台互動」「後台/系統」現在跟上面各列一樣，是 #jpBoard 底下、.jp-board-wrap
+        // 這個橫向捲動容器裡的子節點，所以會共用同一份 min-width:1080px，橫向捲動時
+        // 自然跟階段/行動等列同步對齊，不再是外面獨立的一塊。
+        const frontRow = buildIndependentRow('jpFrontRowWrap', '前台互動', JOURNEY_FRONT_LABELS_CLIENT, 'jp-front-cell', jpFrontOpen, (open) => { jpFrontOpen = open; });
+        board.appendChild(frontRow);
+        const backRow = buildIndependentRow('jpBackRowWrap', '後台/系統', JOURNEY_BACK_LABELS_CLIENT, 'jp-back-cell', jpBackOpen, (open) => { jpBackOpen = open; });
+        board.appendChild(backRow);
+
         board.querySelectorAll('.jp-point[data-code]').forEach(d => {
           d.addEventListener('click', () => {
             const p = points.find(pt => pt.code === d.dataset.code);
@@ -3788,6 +3800,8 @@
           });
         });
 
+        // 前台/後台現在也計入 #jpBoard 的總高度，要放在這兩列都 appendChild 之後才呼叫，
+        // 讓大階段分隔線的高度（drawDividers 內用 board.scrollHeight 量測）算進最新的完整高度。
         drawDividers(board, stageRow);
       }
 
@@ -3814,11 +3828,22 @@
         });
       }
 
-      function buildIndependentRow(container, labelText, valuesMap, cellClass) {
-        container.innerHTML = '';
+      // container 現在改成傳入字串 id（而不是既有 DOM 節點）：
+      // 因為這個 row 現在是 #jpBoard 的子節點，每次 renderBoard() 都會被 board.innerHTML=''
+      // 整個清空重建，不能再依賴頁面上原本就存在的固定容器，所以改成跟 buildRow() 一樣，
+      // 自己 createElement 出一個新的 row 容器（並補回原本的 id，維持外部/測試腳本可能用到的選取方式）。
+      // isOpen／onToggle 用來讓展開狀態能被外部（renderBoard 上層的 jpFrontOpen／jpBackOpen）記住，
+      // 否則每次篩選條件改變重建 DOM，使用者剛展開的內容就會被重置回收合狀態。
+      function buildIndependentRow(id, labelText, valuesMap, cellClass, isOpen, onToggle) {
+        const container = document.createElement('div');
+        container.className = 'jp-row jp-section-divider';
+        container.id = id;
+
         const label = document.createElement('div');
         label.className = 'jp-row-label';
         label.innerHTML = '<span>' + labelText + '</span><span class="jp-arrow">▾</span>';
+        const arrow = label.querySelector('.jp-arrow');
+
         const gridWrap = document.createElement('div');
         gridWrap.className = 'jp-collapsible';
         const grid = document.createElement('div');
@@ -3831,12 +3856,30 @@
           grid.appendChild(cell);
         });
         gridWrap.appendChild(grid);
+
+        if (isOpen) {
+          gridWrap.classList.add('open');
+          arrow.classList.add('open');
+        }
+
         container.appendChild(label);
         container.appendChild(gridWrap);
-        label.querySelector('.jp-arrow').addEventListener('click', () => {
-          gridWrap.classList.toggle('open');
-          label.querySelector('.jp-arrow').classList.toggle('open');
+
+        arrow.addEventListener('click', () => {
+          const nowOpen = !gridWrap.classList.contains('open');
+          gridWrap.classList.toggle('open', nowOpen);
+          arrow.classList.toggle('open', nowOpen);
+          if (onToggle) onToggle(nowOpen);
         });
+
+        // 展開/收合是靠 .jp-collapsible 的 max-height CSS transition 做動畫，
+        // 動畫「跑完那一刻」高度才是最終值，所以用 transitionend（而不是 click 當下）
+        // 觸發 jpRedrawDividers()，讓大階段的垂直分隔線重新量測 #jpBoard 的總高度並跟著變長/變短。
+        gridWrap.addEventListener('transitionend', (e) => {
+          if (e.propertyName === 'max-height' && window.jpRedrawDividers) window.jpRedrawDividers();
+        });
+
+        return container;
       }
 
       let jpQuadExpanded = false;
@@ -4040,8 +4083,8 @@
         }
       })();
 
-      buildIndependentRow(document.getElementById('jpFrontRowWrap'), '前台互動', JOURNEY_FRONT_LABELS_CLIENT, 'jp-front-cell');
-      buildIndependentRow(document.getElementById('jpBackRowWrap'), '後台/系統', JOURNEY_BACK_LABELS_CLIENT, 'jp-back-cell');
+      // 「前台互動」「後台/系統」兩列已經改在 renderBoard() 內部建立並 appendChild 進 #jpBoard
+      // （見上方 renderBoard 內的 buildIndependentRow 呼叫），這裡不用再各自呼叫一次。
 
       window.jpRedrawDividers = function () {
         const board = document.getElementById('jpBoard');
