@@ -930,7 +930,7 @@ function renderHtml(dataset) {
   }
   .info-hint:hover, .info-hint.open{ color:rgb(var(--hud-glow)); }
   .info-hint-pop{
-    display:none; position:absolute; z-index:40; top:22px; left:50%; transform:translateX(-50%);
+    display:none; position:absolute; z-index:999; top:22px; left:50%; transform:translateX(-50%);
     width:260px; max-width:calc(100vw - 24px); background:var(--tooltip-bg);
     backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
     border:1px solid var(--tooltip-border); border-radius:var(--tooltip-radius);
@@ -951,6 +951,11 @@ function renderHtml(dataset) {
     border-bottom:none; border-top:4px solid var(--tooltip-bg);
     filter:drop-shadow(0 2px 2px rgba(var(--hud-glow),0.18));
   }
+  /* 服務藍圖左側 .jp-row-label 寬度只有 82px,遠小於 popup 的 260px,
+     用預設「置中彈出」會讓左半邊超出 .jp-row-label 本身、被外層 .jp-board-wrap 的捲動容器裁掉,
+     這裡改成靠左對齊(以 .info-hint 本身的左緣為基準往右展開),搭配下方 JS 的靠左位移邏輯一起用。 */
+  .jp-row-label .info-hint-pop{ left:0; transform:none; }
+  .jp-row-label .info-hint-pop::after{ left:10px; transform:none; }
   .info-hint.open .info-hint-pop{ display:block; }
   @media (hover:hover){
     .info-hint:hover .info-hint-pop{ display:block; }
@@ -2504,8 +2509,12 @@ function renderHtml(dataset) {
   }
 
   .jp-board-wrap{
-    overflow-x:auto; padding-bottom:14px;
-    /* 底部這條是瀏覽器原生捲軸，跟其他HUD卡片（如 .led-track-scroll）的處理方式一致：
+    overflow-x:auto; overflow-y:visible; padding-bottom:24px;
+    /* overflow-y 明確設為 visible：.jp-board-wrap 只需要「橫向」捲動（手機/小網寬度不足時左右滑），
+       但只設定 overflow-x 的話，瀏覽器會把未設定的 overflow-y 隱性當成 auto，
+       導致往下彈出的 .info-hint-pop 只要超出這個容器的可視高度就會被裁切。
+       改成 visible 之後，popup 才能正常「溢出」容器往下/往上展開，不受這裡的高度限制。
+       底部這條是瀏覽器原生捲軸，跟其他HUD卡片（如 .led-track-scroll）的處理方式一致：
        視覺上太搶眼、跟深色科技感不搭，所以隱藏掉。捲動功能還在（滑鼠拖曳/觸控滑動/
        左右鍵都可以），右邊卡片被切一半的樣子本身就是「還有內容可以滑」的提示。 */
     scrollbar-width:none; -ms-overflow-style:none; -webkit-overflow-scrolling:touch;
@@ -2528,7 +2537,12 @@ function renderHtml(dataset) {
   }
   .jp-macro-index{ font-family:"JetBrains Mono", ui-monospace, monospace; font-size:8px; letter-spacing:0.1em; color:rgb(var(--hud-grid)); opacity:0.85; text-transform:uppercase; position:relative; z-index:1; }
   .jp-macro-label{ font-size:12px; font-weight:600; letter-spacing:0.05em; color:rgb(var(--hud-glow)); position:relative; z-index:1; }
-  .jp-stage-cell{ background:#3a4560; border-radius:6px; color:#fff; font-size:9.5px; font-weight:600; text-align:center; display:flex; align-items:center; justify-content:center; min-height:36px; padding:4px 2px; transition:box-shadow .3s; }
+  .jp-stage-cell{
+    position:relative; border-radius:6px; display:flex; align-items:center; justify-content:center;
+    min-height:36px; padding:4px 2px; font-size:9.5px; font-weight:600; text-align:center;
+    background:rgba(var(--hud-glow),0.06); border:1px solid rgba(255,255,255,0.07);
+    color:rgb(var(--hud-glow)); transition:box-shadow .3s;
+  }
   .jp-stage-cell.flash{ box-shadow:0 0 0 2px var(--android); }
   .jp-channel-cell{ font-size:9px; color:var(--muted); text-align:center; display:flex; align-items:center; justify-content:center; min-height:20px; }
   .jp-flow-cell{ font-size:9px; color:var(--muted); text-align:center; display:flex; align-items:center; justify-content:center; line-height:1.35; padding:5px 3px; min-height:40px; }
@@ -6850,19 +6864,39 @@ function renderHtml(dataset) {
     function adjustInfoHintPop(hintEl) {
       const pop = hintEl.querySelector('.info-hint-pop');
       if (!pop) return;
+      // 服務藍圖 .jp-row-label 底下的 popup 是靠左對齊模式（CSS 已設 left:0; transform:none;），
+      // 跟其他地方「置中展開、用 translateX 微調」的模式不一樣，這裡分開處理位移方式，
+      // 避免兩套邏輯互相覆寫 transform/left 打架。
+      const isLeftAligned = !!hintEl.closest('.jp-row-label');
       pop.classList.remove('flip-up');
-      pop.style.transform = 'translateX(-50%)';
+      if (isLeftAligned) {
+        pop.style.left = '0px';
+      } else {
+        pop.style.transform = 'translateX(-50%)';
+      }
       requestAnimationFrame(() => {
         const margin = 12;
         let rect = pop.getBoundingClientRect();
+        // 底部超出視窗、或距離視窗底緣小於 margin，都強制翻轉成向上展開
         if (rect.bottom > window.innerHeight - margin) {
           pop.classList.add('flip-up');
           rect = pop.getBoundingClientRect();
         }
-        let shift = 0;
-        if (rect.left < margin) shift = margin - rect.left;
-        else if (rect.right > window.innerWidth - margin) shift = (window.innerWidth - margin) - rect.right;
-        if (shift !== 0) pop.style.transform = 'translateX(calc(-50% + ' + shift + 'px))';
+        if (isLeftAligned) {
+          // 靠左對齊模式：直接用 left 位移（而非 transform），避免跟 CSS 的 transform:none 衝突
+          let leftOffset = 0;
+          if (rect.left < margin) {
+            leftOffset = margin - rect.left;
+          } else if (rect.right > window.innerWidth - margin) {
+            leftOffset = (window.innerWidth - margin) - rect.right;
+          }
+          pop.style.left = leftOffset + 'px';
+        } else {
+          let shift = 0;
+          if (rect.left < margin) shift = margin - rect.left;
+          else if (rect.right > window.innerWidth - margin) shift = (window.innerWidth - margin) - rect.right;
+          if (shift !== 0) pop.style.transform = 'translateX(calc(-50% + ' + shift + 'px))';
+        }
       });
     }
     document.querySelectorAll('.info-hint').forEach(el => {
