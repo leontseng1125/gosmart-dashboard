@@ -2643,11 +2643,29 @@
       if (!avatar || !dialog) return;
       const bodyEl = document.getElementById('scoutCommBody');
       const closeBtn = document.getElementById('scoutCommClose');
-      const LINES = [
+      const SCOUT_DIALOGUES = [
+        // 【前線深空與開發辛酸】
         '報告長官：目前 iOS 數據依然由熱心 PM 手動運送回港，請求撥款自動化通訊頻寬！',
-        '深空雷達回報：有位用戶為了藍牙開鎖在停車場繞了 20 分鐘……阿葛格已將其標註在旅程第 7 節點。',
-        '連續點擊我並不能讓版本評分回到 5 星，但能提升少尉的心跳頻率。',
-        '警告：設計師的咖啡存量已低於 15%，建議立即返航補給。'
+        '深空日誌：有位用戶為了藍牙開鎖在停車場繞了 20 分鐘……阿葛格已將其標註在旅程第 7 節點。',
+        '早期的 iOS 信號全靠少尉一張張截圖手動拼裝……現在能看到動態點陣，感動度已突破 200%。',
+        '警告：艦橋工程師的咖啡存量已降至 15%，建議立即返航補給。',
+        '正在深空攔截雜訊……報告，剛打撈到一則因為「找不到還車格」而在路邊靈魂咆哮的微弱頻率。',
+        // 【軍階互動與幽默吐槽】
+        '連續點擊我並不能讓版本評分回到 5 星，但能讓少尉的心跳頻率超頻 30%。',
+        '別再戳少尉的肩章了！再戳……再戳我就要跟總部申請晉升中尉了！',
+        '報告長官！目前全艦系統運作正常，除了我的黑眼圈稍微擴散了 2 個像素。',
+        '長官，您是來巡檢數據的，還是純粹無聊來戳阿葛格的？',
+        '雷達顯示：您已經在艦橋逗留許久，若發現 Bug，請溫柔回報給少尉。',
+        '阿葛格的直屬長官為翊凱艦長。',
+        // 【戰術導航與功能指引】
+        '導航提示：右側的「服務藍圖」藏著 14 個航段的阻力指數，遇到紅光節點記得點開看看。',
+        '若想知道最近大家在抱怨什麼，不妨切到 DEEP INSIGHTS，那裡的點陣儀表隨時待命。',
+        '報告：如果遇到評分暴跌的版本，記得查看版本健康度，少尉已經把疑似元兇標出來了。',
+        // 【彩蛋聯動與極客幽默】
+        '聽說在鍵盤敲下古老的星際秘技（↑↑↓↓←→←→BA），這座艦橋會進入高能過載模式……',
+        'Console 終端機好像有少尉偷偷留下的徵才密令，工程師長官千萬別按 F12 偷看！',
+        '艦橋密令：試著在背景空白處點擊，說不定能從深空打撈出漂流瓶喔！',
+        '正在執行例行除錯……偵測到「需求不要再改了」的量子干涉波。'
       ];
       let clickTimes = [];
       let hideTimer = null;
@@ -2655,7 +2673,7 @@
         dialog.classList.remove('is-visible');
       }
       function showDialog() {
-        bodyEl.textContent = LINES[Math.floor(Math.random() * LINES.length)];
+        bodyEl.textContent = SCOUT_DIALOGUES[Math.floor(Math.random() * SCOUT_DIALOGUES.length)];
         dialog.classList.add('is-visible');
         clearTimeout(hideTimer);
         hideTimer = setTimeout(hideDialog, 4000);
@@ -2747,7 +2765,11 @@
         { icon: '🛰️', label: null },
         { icon: '🛸', label: null },
         { icon: '🐶', label: '太空狗巡邏中' },
-        { icon: '🗑️', label: 'Still life' }
+        { icon: '🫡', label: 'Still life' },
+        { icon: '✨', label: null },
+        { icon: '🪐', label: null },
+        { icon: '🌍', label: null },
+        { icon: '🦝', label: '漫遊中' }
       ];
 
       function spawnPingWave(x, y) {
