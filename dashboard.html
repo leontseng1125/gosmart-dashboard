@@ -1928,9 +1928,145 @@
   body.hud-booting .group-title.caret-blink {
     animation-play-state: paused;
   }
+
+  /* ===== 彩蛋（Easter Eggs）=====
+     四個彩蛋互相獨立，視覺沿用既有 --bg / --hud-glow / --hud-grid 語彙，
+     不共用 .info-hint-pop，也不掛在既有的全域 document click（避免互相誤關）。 */
+
+  /* 彩蛋1：頭像徽記 + 通訊視窗（HUD Comm Dialog） */
+  .scout-avatar {
+    display: inline-block;
+    cursor: pointer;
+    font-size: 20px;
+    margin-right: 8px;
+    vertical-align: middle;
+    transition: filter 0.2s ease, transform 0.2s ease;
+    filter: drop-shadow(0 0 0 rgba(var(--hud-glow), 0));
+  }
+  .scout-avatar:hover, .scout-avatar:focus-visible {
+    filter: drop-shadow(0 0 8px rgba(var(--hud-glow), 0.85));
+    transform: scale(1.08);
+    outline: none;
+  }
+  #scoutCommDialog {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 9999;
+    width: 280px;
+    max-width: calc(100vw - 32px);
+    background: #11151d;
+    border: 1px solid rgba(var(--hud-glow), 0.4);
+    border-radius: 6px;
+    padding: 14px 16px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 16px rgba(var(--hud-glow), 0.15);
+    opacity: 0;
+    transform: translateY(8px);
+    pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+  #scoutCommDialog.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  #scoutCommDialog .scout-comm-title {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: rgb(var(--hud-glow));
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  #scoutCommDialog .scout-comm-close {
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1;
+    padding: 0 2px;
+  }
+  #scoutCommDialog .scout-comm-close:hover { color: rgb(var(--hud-glow)); }
+  #scoutCommDialog .scout-comm-body {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text);
+    background-image: repeating-linear-gradient(
+      to bottom,
+      rgba(255,255,255,0.02) 0px,
+      rgba(255,255,255,0.02) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+  }
+
+  /* 彩蛋2：戰鬥超頻模式——全螢幕半透明色疊加濾鏡，不動 CSS 變數、不碰圖表本身 */
+  #overclockFilterOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9990;
+    pointer-events: none;
+    opacity: 0;
+    background: linear-gradient(135deg, rgba(255,56,96,0.18), rgba(255,170,0,0.12));
+    mix-blend-mode: hard-light;
+  }
+  body.overclock-mode #overclockFilterOverlay {
+    animation: overclockPulse 2.4s ease-in-out infinite;
+  }
+  @keyframes overclockPulse { 0%, 100% { opacity: 0.85; } 50% { opacity: 1; } }
+  #overclockFlash {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    pointer-events: none;
+    background: rgba(255,56,96,0.6);
+    opacity: 0;
+  }
+  #overclockFlash.is-flashing { opacity: 1; }
+
+  /* 彩蛋4：深空背景「信號打撈釣魚」——雷達波紋 + 太空漂流物 */
+  .ping-wave {
+    position: fixed;
+    z-index: 5;
+    width: 50px;
+    height: 50px;
+    margin-left: -25px;
+    margin-top: -25px;
+    border: 1px solid rgba(0, 221, 205, 0.55);
+    border-radius: 50%;
+    transform: scale(0);
+    opacity: 0.6;
+    pointer-events: none;
+    transition: transform 0.8s ease-out, opacity 0.8s ease-out;
+  }
+  .drift-item {
+    position: fixed;
+    z-index: 6;
+    pointer-events: none;
+    text-align: center;
+    font-size: 20px;
+    opacity: 0;
+    transform: translateY(0) rotate(0deg);
+    transition: opacity 1s ease-in-out, transform 2.6s ease-in-out;
+  }
+  .drift-item .drift-label {
+    display: block;
+    margin-top: 4px;
+    font-size: 9px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    color: rgb(var(--hud-grid));
+    white-space: nowrap;
+    text-shadow: 0 0 6px rgba(var(--hud-grid), 0.6);
+  }
 </style>
 </head>
 <body class="hud-booting">
+  <!-- 彩蛋2 用：全螢幕半透明色疊加濾鏡層 + 觸發瞬間的CRT警報閃光層，兩層都 pointer-events:none，不擋任何互動 -->
+  <div id="overclockFilterOverlay" aria-hidden="true"></div>
+  <div id="overclockFlash" aria-hidden="true"></div>
+
   <!-- ===== HUD Boot Sequence：科幻風開場動畫，覆蓋在畫面最上層 =====
        body 上的 .hud-booting 從 HTML 一開始就存在（不是JS事後補上去的），
        這樣才能在瀏覽器還沒執行任何 <script> 之前就先蓋住畫面、避免FOUC，
@@ -1961,7 +2097,14 @@
     <div class="drawer-body" id="drawerBody"></div>
   </div>
 
-  <h1>領航少尉 阿葛格</h1>
+  <div style="display:flex; align-items:center; gap:4px; margin-bottom:4px;">
+    <span class="scout-avatar" id="scoutAvatar" role="button" tabindex="0" title="領航少尉 阿葛格">🎖️</span>
+    <h1 style="margin:0;">領航少尉 阿葛格</h1>
+  </div>
+  <div id="scoutCommDialog" aria-live="polite">
+    <div class="scout-comm-title">[SEC-COM // PRIVATE CHANNEL]<span class="scout-comm-close" id="scoutCommClose" role="button" tabindex="0">✕</span></div>
+    <div class="scout-comm-body" id="scoutCommBody"></div>
+  </div>
   <div class="subtitle" id="subtitle"></div>
   <div class="mono" id="hudStrip" style="font-size:11px; color:rgb(var(--hud-glow)); margin:-4px 0 20px; letter-spacing:0.03em; opacity:0.9;"></div>
 
@@ -2077,7 +2220,7 @@
   </div>
 
     <div style="display:flex; align-items:center; gap:6px; margin-bottom:16px;">
-      <span class="status-pill status-ok mono">AUTO_SUMMARY</span>
+      <span class="status-pill status-ok mono" id="autoSummaryStatusPill">AUTO_SUMMARY</span>
       <span class="info-hint" tabindex="0">ⓘ<div class="info-hint-pop">以下內容是依規則自動比對數字產生（版本評分落差、負評分類排序、月增減比較、健康雷達維度變化），不是 AI 理解語意後寫出來的分析，準確度以此為前提，建議搭配下方「回饋摘要」「服務藍圖」交叉確認。</div></span>
     </div>
 
@@ -2488,6 +2631,171 @@
       requestAnimationFrame(() => requestAnimationFrame(startHudBootExit));
     }, 2500);
 
+    // ============================================================
+    // 彩蛋（Easter Eggs）：全部包在 onHudBootDone() 裡註冊監聽，
+    // 確保開場 Loading 播完之前不會生效，避免訪客在光幕期間亂點造成狀態錯亂。
+    // ============================================================
+
+    // ----- 彩蛋1：頭像／軍階觸發「少尉的碎碎念」 -----
+    onHudBootDone(function () {
+      const avatar = document.getElementById('scoutAvatar');
+      const dialog = document.getElementById('scoutCommDialog');
+      if (!avatar || !dialog) return;
+      const bodyEl = document.getElementById('scoutCommBody');
+      const closeBtn = document.getElementById('scoutCommClose');
+      const LINES = [
+        '報告長官：目前 iOS 數據依然由熱心 PM 手動運送回港，請求撥款自動化通訊頻寬！',
+        '深空雷達回報：有位用戶為了藍牙開鎖在停車場繞了 20 分鐘……阿葛格已將其標註在旅程第 7 節點。',
+        '連續點擊我並不能讓版本評分回到 5 星，但能提升少尉的心跳頻率。',
+        '警告：設計師的咖啡存量已低於 15%，建議立即返航補給。'
+      ];
+      let clickTimes = [];
+      let hideTimer = null;
+      function hideDialog() {
+        dialog.classList.remove('is-visible');
+      }
+      function showDialog() {
+        bodyEl.textContent = LINES[Math.floor(Math.random() * LINES.length)];
+        dialog.classList.add('is-visible');
+        clearTimeout(hideTimer);
+        hideTimer = setTimeout(hideDialog, 4000);
+      }
+      function registerClick() {
+        const now = Date.now();
+        clickTimes.push(now);
+        clickTimes = clickTimes.filter(function (t) { return now - t <= 1500; });
+        if (clickTimes.length >= 3) {
+          clickTimes = [];
+          showDialog();
+        }
+      }
+      avatar.addEventListener('click', function (e) {
+        e.stopPropagation(); // 避免順便冒泡觸發彩蛋4的深空點擊判定
+        registerClick();
+      });
+      avatar.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); registerClick(); }
+      });
+      if (closeBtn) {
+        closeBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          clearTimeout(hideTimer);
+          hideDialog();
+        });
+      }
+    });
+
+    // ----- 彩蛋2：Konami Code「戰鬥過載模式」 -----
+    onHudBootDone(function () {
+      const KONAMI = ['arrowup', 'arrowup', 'arrowdown', 'arrowdown', 'arrowleft', 'arrowright', 'arrowleft', 'arrowright', 'b', 'a'];
+      let buffer = [];
+      let savedLabels = null;
+      const overlayFlash = document.getElementById('overclockFlash');
+      const statusPills = [
+        document.getElementById('aiInsightStatus'),
+        document.getElementById('autoSummaryStatusPill')
+      ].filter(Boolean);
+
+      function triggerFlash() {
+        if (!overlayFlash) return;
+        overlayFlash.style.transition = 'none';
+        overlayFlash.classList.add('is-flashing');
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            overlayFlash.style.transition = 'opacity 0.25s ease-out';
+            overlayFlash.classList.remove('is-flashing');
+          });
+        });
+      }
+
+      function setOverclock(on) {
+        const isOn = document.body.classList.contains('overclock-mode');
+        if (on === isOn) return;
+        document.body.classList.toggle('overclock-mode', on);
+        if (on) {
+          savedLabels = statusPills.map(function (el) { return el.textContent; });
+          statusPills.forEach(function (el) { el.textContent = 'OVERCLOCK // 200%'; });
+          triggerFlash();
+        } else {
+          if (savedLabels) {
+            statusPills.forEach(function (el, i) { el.textContent = savedLabels[i]; });
+          }
+          savedLabels = null;
+        }
+      }
+
+      document.addEventListener('keydown', function (e) {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+        if (e.key === 'Escape') {
+          if (document.body.classList.contains('overclock-mode')) setOverclock(false);
+          buffer = [];
+          return;
+        }
+        const key = e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase();
+        buffer.push(key);
+        if (buffer.length > KONAMI.length) buffer.shift();
+        if (buffer.length === KONAMI.length && buffer.every(function (k, i) { return k === KONAMI[i]; })) {
+          buffer = [];
+          setOverclock(!document.body.classList.contains('overclock-mode'));
+        }
+      });
+    });
+
+    // ----- 彩蛋4：深空背景「信號打撈釣魚」 -----
+    onHudBootDone(function () {
+      const DRIFT_ITEMS = [
+        { icon: '🛰️', label: null },
+        { icon: '🛸', label: null },
+        { icon: '🐶', label: '太空狗巡邏中' },
+        { icon: '🗑️', label: 'Still life' }
+      ];
+
+      function spawnPingWave(x, y) {
+        const wave = document.createElement('div');
+        wave.className = 'ping-wave';
+        wave.style.left = x + 'px';
+        wave.style.top = y + 'px';
+        document.body.appendChild(wave);
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            wave.style.transform = 'scale(3)';
+            wave.style.opacity = '0';
+          });
+        });
+        setTimeout(function () {
+          if (wave.parentNode) wave.parentNode.removeChild(wave);
+        }, 850);
+      }
+
+      function spawnDriftItem(x, y) {
+        if (Math.random() > 0.15) return; // 約15%機率
+        const pick = DRIFT_ITEMS[Math.floor(Math.random() * DRIFT_ITEMS.length)];
+        const el = document.createElement('div');
+        el.className = 'drift-item';
+        el.style.left = x + 'px';
+        el.style.top = y + 'px';
+        el.innerHTML = pick.icon + (pick.label ? '<span class="drift-label">' + pick.label + '</span>' : '');
+        document.body.appendChild(el);
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            el.style.opacity = '1';
+            el.style.transform = 'translateY(-46px) rotate(24deg)';
+          });
+        });
+        setTimeout(function () {
+          el.style.opacity = '0';
+        }, 2400);
+        setTimeout(function () {
+          if (el.parentNode) el.parentNode.removeChild(el);
+        }, 3100);
+      }
+
+      document.addEventListener('click', function (e) {
+        if (e.target.closest('.card, .chart-card, .group-nav, .tabs, .review-drawer, .drawer-overlay, button, input, select, table, a, .info-hint, .scout-avatar, #scoutCommDialog')) return;
+        spawnPingWave(e.clientX, e.clientY);
+        spawnDriftItem(e.clientX, e.clientY);
+      });
+    });
 
     // ===== 整合式旅程痛點 tab：靜態結構設定（來自論文服務藍圖，非資料運算結果） =====
     const JOURNEY_STAGES_CLIENT = ['選擇品牌','會員註冊','審核身份','搜尋欲租車輛','預定車輛','等待取車','前往取車','取車中','使用中','準備還車','還車','付款','還車後服務','狀況排除'];
@@ -6424,6 +6732,10 @@
     document.addEventListener('click', () => {
       document.querySelectorAll('.info-hint.open').forEach(o => o.classList.remove('open'));
     });
+
+    // ----- 彩蛋5：終端機 Console 徵才／共創「密令」 -----
+    console.log('%c🛰️ [SIGNAL INTERCEPTED] 領航少尉 阿葛格 // 私人通訊頻道', 'color: #C6F24E; font-family: monospace; font-size: 14px; font-weight: bold; text-shadow: 0 0 6px rgba(198,242,78,0.5);');
+    console.log('%c長官，您發現了艦橋的除錯終端機！這座儀表板由設計師與 AI 協同打造。若您也是痛恨手動貼 Excel、想一起把這套系統接上正式 API 的夥伴，歡迎聯繫阿葛格共創！', 'color: #9aa0ac; font-family: monospace; font-size: 12px; line-height: 1.6;');
   </script>
 </body>
 </html>
