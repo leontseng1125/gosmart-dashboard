@@ -2925,7 +2925,648 @@ function renderHtml(dataset) {
     white-space: nowrap;
     text-shadow: 0 0 6px rgba(var(--hud-grid), 0.6);
   }
+
+  /* =====================================================================
+     BLUEPRINT LAB（體驗設計推演畫布）整併樣式，來源：blueprint-sandbox.html
+     ===================================================================== */
+  /* -----------------------------------------------------------------
+     整併注意：--bg / --card / --border / --text / --muted / --hud-glow /
+     --hud-grid 這幾個變數，dashboard.html 應該已經在既有 :root 中定義
+     過相同數值（見 overview.md 的 Design tokens）。這裡只保留畫布「新增」
+     的兩個變數（--idea / --hypo / --wait），避免與既有 :root 重複宣告；
+     若確認 dashboard.html 尚未定義 --bg 等變數，再自行補上即可。
+     ----------------------------------------------------------------- */
+  :root {
+    --idea: #00DDCD;         /* 💡 機會點青綠 */
+    --hypo: #ffd23f;         /* ❓ 假設琥珀黃 */
+    --wait: #7ee27e;         /* W 預期等待：青草綠 */
+  }
+
+  /* 原檔案在獨立頁面時，這三條規則寫在 body / * 全域選擇器上；
+     整併進主儀表板後改為完全限定在 #group-blueprint-lab 範圍內，
+     避免影響既有的 .chart-card / .jp-* / .live-* 版面與 box-sizing。 */
+  #group-blueprint-lab,
+  #group-blueprint-lab * {
+    box-sizing: border-box;
+  }
+  #group-blueprint-lab .bp-lab-app {
+    position: relative;
+    z-index: 1;
+    max-width: 100%;
+    padding: 24px;
+    color: var(--text);
+    font-family: -apple-system, "PingFang TC", "Noto Sans TC", sans-serif;
+  }
+  #group-blueprint-lab .mono { font-family: "JetBrains Mono", monospace; }
+
+  #group-blueprint-lab .bp-lab-app::before {
+    content: "";
+    position: absolute; /* 原為 position: fixed（相對於 body），改為 absolute 並限定在 .bp-lab-app 內，避免疊在整個視窗上 */
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(var(--hud-grid), 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--hud-grid), 0.05) 1px, transparent 1px);
+    background-size: 32px 32px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ===== Header / Toolbar ===== */
+  .bp-lab-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 16px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .bp-lab-title {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: var(--text);
+    text-shadow: 0 0 12px rgba(var(--hud-glow), 0.35);
+  }
+  .bp-lab-subtitle {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    margin-top: 4px;
+  }
+  .bp-lab-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .bp-lab-save-indicator {
+    font-size: 11px;
+    color: rgb(var(--hud-glow));
+    padding: 6px 10px;
+    border: 1px solid rgba(var(--hud-glow), 0.35);
+    border-radius: 6px;
+    background: rgba(var(--hud-glow), 0.06);
+    white-space: nowrap;
+  }
+  .bp-lab-toolbtn {
+    font-size: 12px;
+    color: var(--text);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: 0.15s ease;
+    white-space: nowrap;
+  }
+  .bp-lab-toolbtn:hover {
+    border-color: rgba(var(--hud-grid), 0.6);
+    color: rgb(var(--hud-grid));
+  }
+  .bp-lab-toolbtn--primary:hover {
+    border-color: rgba(var(--hud-glow), 0.6);
+    color: rgb(var(--hud-glow));
+  }
+
+  .bp-lab-hint {
+    font-size: 11px;
+    color: var(--muted);
+    margin: 0 0 18px 0;
+    letter-spacing: 0.02em;
+  }
+
+  /* ===== Board wrapper ===== */
+  .bp-lab-board-wrap {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE / Edge */
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--border);
+    padding-bottom: 2px;
+  }
+  .bp-lab-board-wrap::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+  }
+  .bp-lab-board {
+    display: grid;
+    gap: 1px;
+    background: var(--border);
+    min-width: 1180px;
+  }
+  .bp-lab-cell {
+    background: var(--card);
+    padding: 10px;
+    min-height: 56px;
+    overflow-wrap: break-word;
+  }
+
+  /* Row labels (sticky left column) */
+  /* 確保左側標籤欄不會裁切溢出的 Tooltip，並維持 sticky 層級 */
+  .bp-lab-row-label {
+    position: sticky;
+    left: 0;
+    z-index: 50; /* 提高 sticky 欄的基礎層級 */
+    overflow: visible !important; /* 嚴禁裁切子節點 */
+    background: #12141a;
+    border-right: 1px solid rgba(var(--hud-grid), 0.3);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 8px;
+  }
+  .bp-lab-row-label-zh {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .bp-lab-row-label-en {
+    font-size: 9px;
+    color: var(--muted);
+    margin-top: 2px;
+    letter-spacing: 0.05em;
+  }
+
+  /* 畫布橫列標題 ⓘ 按鈕：點擊觸發 #bpLabInfoModal（body 頂層彈窗），本身不掛任何
+     彈出內容，因此不受 .bp-lab-row-label / .bp-lab-board 任何堆疊上下文或 overflow 影響。 */
+  .bp-lab-hint-btn {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-size: 11px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+    vertical-align: middle;
+  }
+  .bp-lab-hint-btn:hover {
+    color: rgb(var(--hud-glow));
+  }
+
+  /* Phase header row */
+  .bp-lab-phase-header {
+    text-align: center;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    font-size: 12px;
+    padding: 12px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .bp-lab-accent-0 {
+    border-top: 3px solid rgb(var(--hud-glow));
+    background: rgba(var(--hud-glow), 0.08);
+    color: rgb(var(--hud-glow));
+  }
+  .bp-lab-accent-1 {
+    border-top: 3px solid rgb(var(--hud-grid));
+    background: rgba(var(--hud-grid), 0.08);
+    color: rgb(var(--hud-grid));
+  }
+
+  /* Stage header row */
+  .bp-lab-stage-header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px;
+  }
+  .bp-lab-stage-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .bp-lab-stage-code {
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+  }
+  /* 階段名稱改為萊姆綠 */
+  .bp-lab-stage-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: rgb(var(--hud-glow));
+    line-height: 1.3;
+    text-shadow: 0 0 8px rgba(var(--hud-glow), 0.25); /* 微光暈，增加 HUD 質感 */
+  }
+  /* STAGE 列左側標籤同步呼應萊姆綠 */
+  .bp-lab-row-label--stage .bp-lab-row-label-zh {
+    color: rgb(var(--hud-glow));
+    text-shadow: 0 0 8px rgba(var(--hud-glow), 0.25);
+  }
+  .bp-lab-btn-trigger {
+    flex-shrink: 0;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 4px;
+    width: 24px;
+    height: 22px;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    transition: 0.15s ease;
+  }
+  .bp-lab-btn-trigger:hover {
+    border-color: rgba(var(--hud-glow), 0.6);
+    color: rgb(var(--hud-glow));
+  }
+  .bp-lab-btn-trigger.is-active {
+    border-color: rgb(var(--hud-glow));
+    color: rgb(var(--hud-glow));
+    background: rgba(var(--hud-glow), 0.1);
+  }
+  .bp-lab-stage-ctrls {
+    display: flex;
+    gap: 4px;
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transform: translateY(-4px);
+    transition: max-height 0.22s ease, opacity 0.18s ease, transform 0.22s ease, margin-top 0.22s ease;
+    margin-top: 0;
+  }
+  .bp-lab-stage-ctrls.is-open {
+    max-height: 32px;
+    opacity: 1;
+    transform: translateY(0);
+    margin-top: 6px;
+  }
+  .bp-lab-stage-ctrls button {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 4px;
+    width: 26px;
+    height: 24px;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    transition: 0.15s ease;
+  }
+  .bp-lab-stage-ctrls button:hover:not(:disabled) {
+    border-color: rgba(var(--hud-glow), 0.6);
+    color: rgb(var(--hud-glow));
+  }
+  .bp-lab-btn-delete:hover:not(:disabled) {
+    border-color: var(--neg) !important;
+    color: var(--neg) !important;
+  }
+  .bp-lab-stage-ctrls button:disabled {
+    opacity: 0.28;
+    cursor: not-allowed;
+  }
+
+  /* Editable content cells */
+  .bp-lab-content-cell { padding: 8px; }
+  .bp-lab-editable {
+    min-height: 48px;
+    outline: none;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--text);
+    cursor: text;
+    padding: 4px 6px;
+    border-radius: 5px;
+    transition: 0.15s ease;
+  }
+  .bp-lab-editable:hover {
+    background: rgba(var(--hud-grid), 0.05);
+  }
+  .bp-lab-editable:focus {
+    background: rgba(var(--hud-glow), 0.06);
+    box-shadow: 0 0 0 1.5px rgba(var(--hud-glow), 0.5);
+  }
+  .bp-lab-editable[data-placeholder]:empty::before {
+    content: attr(data-placeholder);
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  /* ===== Row 3 行為流程：縱向微型流程軌道（Vertical Step Flow） ===== */
+  .bp-lab-flow-cell {
+    cursor: pointer;
+    padding: 6px;
+  }
+  .bp-lab-flow-cell:hover {
+    background: rgba(var(--hud-grid), 0.04);
+  }
+  .bp-lab-flow-meta {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 4px;
+  }
+  .bp-lab-flow-badge {
+    font-size: 9px;
+    color: rgb(var(--hud-grid));
+    background: rgba(var(--hud-grid), 0.1);
+    border: 1px solid rgba(var(--hud-grid), 0.3);
+    border-radius: 3px;
+    padding: 1px 5px;
+  }
+  .bp-lab-flow-container {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    min-height: 110px;
+  }
+  .bp-lab-flow-empty {
+    color: var(--muted);
+    font-style: italic;
+    font-size: 12px;
+    padding: 8px 2px;
+  }
+  .bp-lab-flow-step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(var(--hud-grid), 0.2);
+    border-left: 2.5px solid rgb(var(--hud-grid)); /* 左側亮條 */
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 11.5px;
+    color: var(--text);
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .bp-lab-flow-step:hover {
+    border-color: rgba(var(--hud-glow), 0.5);
+    background: rgba(var(--hud-glow), 0.05);
+  }
+  .bp-lab-flow-step-idx {
+    font-size: 9px;
+    color: rgb(var(--hud-grid));
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+  }
+  .bp-lab-flow-step-text {
+    flex: 1;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+  .bp-lab-flow-connector {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 8px;
+    color: rgba(var(--hud-grid), 0.4);
+    font-size: 10px;
+    line-height: 1;
+    margin: -2px 0;
+  }
+  .bp-lab-flow-textarea {
+    width: 100%;
+    min-height: 110px;
+    background: rgba(var(--hud-glow), 0.05);
+    border: none;
+    outline: none;
+    box-shadow: 0 0 0 1.5px rgba(var(--hud-glow), 0.5);
+    color: var(--text);
+    font-size: 12px;
+    line-height: 1.6;
+    padding: 8px;
+    resize: vertical;
+    box-sizing: border-box;
+    display: block;
+  }
+  .bp-lab-flow-textarea::placeholder {
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  /* Design notes row — noticeably taller than the rows above */
+  .bp-lab-notes-cell {
+    min-height: 110px;
+    align-items: flex-start;
+  }
+  .bp-lab-editable--notes {
+    min-height: 110px;
+    width: 100%;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.6;
+  }
+
+  /* Annotation row */
+  .bp-lab-anno-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 8px;
+  }
+  .bp-lab-anno-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .bp-lab-tag {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 9px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    line-height: 1.4;
+    cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.15s ease;
+  }
+  .bp-lab-tag:hover {
+    transform: translateY(-1px);
+  }
+  .bp-lab-tag--idea {
+    border-color: var(--idea);
+    color: var(--idea);
+    box-shadow: 0 0 9px var(--idea);
+  }
+  .bp-lab-tag--hypo {
+    border-color: var(--hypo);
+    color: var(--hypo);
+    box-shadow: 0 0 9px var(--hypo);
+  }
+  .bp-lab-tag--F {
+    border-color: var(--neg);
+    color: var(--neg);
+    box-shadow: 0 0 9px var(--neg);
+  }
+  .bp-lab-tag--D {
+    border-color: var(--hypo);
+    color: var(--hypo);
+    box-shadow: 0 0 9px var(--hypo);
+  }
+  .bp-lab-tag--W {
+    border-color: var(--wait);
+    color: var(--wait);
+    box-shadow: 0 0 9px var(--wait);
+  }
+  .bp-lab-tag-icon { flex-shrink: 0; font-weight: 700; }
+  .bp-lab-tag-text {
+    flex: 1;
+    word-break: break-word;
+    color: var(--text);
+  }
+  .bp-lab-tag-del {
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font-size: 10px;
+    opacity: 0.55;
+    flex-shrink: 0;
+    padding: 0;
+  }
+  .bp-lab-tag-del:hover { opacity: 1; }
+  .bp-lab-add-anno {
+    align-self: flex-start;
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--muted);
+    font-size: 11px;
+    padding: 5px 11px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: 0.15s ease;
+  }
+  .bp-lab-add-anno:hover {
+    border-color: rgba(var(--hud-grid), 0.6);
+    color: rgb(var(--hud-grid));
+  }
+
+  /* Export mode: hide all interactive chrome */
+  .bp-lab-exporting .bp-lab-ctrl {
+    display: none !important;
+  }
+  .bp-lab-exporting .bp-lab-stage-ctrls {
+    display: none !important;
+  }
+  .bp-lab-exporting .bp-lab-editable:hover,
+  .bp-lab-exporting .bp-lab-editable:focus {
+    background: transparent;
+    box-shadow: none;
+  }
+
+  /* ===== Annotation modal ===== */
+  .bp-lab-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  .bp-lab-modal-overlay[hidden] { display: none !important; }
+  .bp-lab-modal {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px;
+    width: 320px;
+    max-width: 90vw;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  }
+  .bp-lab-modal-title {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 14px;
+    color: var(--text);
+  }
+  .bp-lab-modal-types {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .bp-lab-type-btn {
+    flex: 1;
+    padding: 9px 4px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 12.5px;
+    transition: 0.15s ease;
+  }
+  .bp-lab-type-btn.is-selected[data-type="idea"] {
+    border-color: var(--idea);
+    color: var(--idea);
+    box-shadow: 0 0 9px var(--idea);
+  }
+  .bp-lab-type-btn.is-selected[data-type="hypo"] {
+    border-color: var(--hypo);
+    color: var(--hypo);
+    box-shadow: 0 0 9px var(--hypo);
+  }
+  .bp-lab-type-btn.is-selected[data-type="F"] {
+    border-color: var(--neg);
+    color: var(--neg);
+    box-shadow: 0 0 9px var(--neg);
+  }
+  .bp-lab-type-btn.is-selected[data-type="D"] {
+    border-color: var(--hypo);
+    color: var(--hypo);
+    box-shadow: 0 0 9px var(--hypo);
+  }
+  .bp-lab-type-btn.is-selected[data-type="W"] {
+    border-color: var(--wait);
+    color: var(--wait);
+    box-shadow: 0 0 9px var(--wait);
+  }
+  #bpLabAnnoText {
+    width: 100%;
+    min-height: 72px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    color: var(--text);
+    padding: 9px;
+    font-size: 12.5px;
+    resize: vertical;
+    margin-bottom: 16px;
+    font-family: inherit;
+  }
+  #bpLabAnnoText:focus {
+    outline: none;
+    border-color: rgba(var(--hud-glow), 0.6);
+  }
+  .bp-lab-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  .bp-lab-modal-actions button {
+    font-size: 12px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    transition: 0.15s ease;
+  }
+  #bpLabAnnoCancel:hover { color: var(--text); border-color: var(--muted); }
+  #bpLabAnnoConfirm {
+    color: rgb(var(--hud-glow));
+    border-color: rgba(var(--hud-glow), 0.5);
+  }
+  #bpLabAnnoConfirm:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  #bpLabAnnoConfirm:not(:disabled):hover {
+    background: rgba(var(--hud-glow), 0.1);
+  }
+
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body class="hud-booting">
   <!-- 彩蛋2 用：全螢幕半透明色疊加濾鏡層 + 觸發瞬間的CRT警報閃光層，兩層都 pointer-events:none，不擋任何互動 -->
@@ -2950,6 +3591,31 @@ function renderHtml(dataset) {
       <div class="hud-boot-log mono" id="hudBootLog"></div>
     </div>
     <div class="hud-boot-scanline"></div>
+  </div>
+
+  <div id="bpLabAnnoModal" class="bp-lab-modal-overlay" hidden>
+    <div class="bp-lab-modal">
+      <div class="bp-lab-modal-title mono" id="bpLabAnnoModalTitle">新增標註</div>
+      <div class="bp-lab-modal-types" id="bpLabAnnoTypes"></div>
+      <textarea id="bpLabAnnoText" placeholder="輸入備註內容..."></textarea>
+      <div class="bp-lab-modal-actions">
+        <button type="button" id="bpLabAnnoCancel">取消</button>
+        <button type="button" id="bpLabAnnoConfirm" disabled>新增</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 推演畫布左側橫列標題 ⓘ 說明彈窗：獨立於 .bp-lab-board 的整個 grid 層級之外，
+       放在 body 頂層（跟 #bpLabAnnoModal 同層），避免受畫布內任何 sticky/position 元素
+       建立的堆疊上下文（stacking context）影響，徹底根治被下方欄位遮蓋的問題。 -->
+  <div id="bpLabInfoModal" class="bp-lab-modal-overlay" hidden>
+    <div class="bp-lab-modal" style="width: 320px; border-color: rgba(var(--hud-glow), 0.5);">
+      <div class="bp-lab-modal-title mono" id="bpLabInfoModalTitle" style="color: rgb(var(--hud-glow)); margin-bottom: 8px;"></div>
+      <div id="bpLabInfoModalBody" style="font-size: 11.5px; line-height: 1.7; color: #e8e9ed;"></div>
+      <div class="bp-lab-modal-actions" style="margin-top: 14px;">
+        <button type="button" id="bpLabInfoModalClose" class="bp-lab-toolbtn" style="padding: 4px 12px;">關閉</button>
+      </div>
+    </div>
   </div>
 
   <div class="drawer-overlay" id="drawerOverlay"></div>
@@ -2987,6 +3653,10 @@ function renderHtml(dataset) {
     <button class="group-btn" data-group="journey">
       <span class="group-icon">🗺️</span>
       <span class="group-text"><span class="group-title">JOURNEY BLUEPRINT</span><span class="group-subtitle">服務藍圖</span></span>
+    </button>
+    <button class="group-btn" data-group="blueprint-lab">
+      <span class="group-icon">🛠️</span>
+      <span class="group-text"><span class="group-title">BLUEPRINT LAB</span><span class="group-subtitle">體驗推演</span></span>
     </button>
     <button class="group-btn group-btn-mini" data-group="favorites">
       <span class="group-icon">⭐</span>
@@ -3396,6 +4066,32 @@ function renderHtml(dataset) {
   </div>
   </div>
 
+  <div class="group-panel" id="group-blueprint-lab">
+    <div class="bp-lab-app">
+
+      <header class="bp-lab-header">
+        <div>
+          <div class="bp-lab-title mono">體驗設計推演畫布</div>
+          <div class="bp-lab-subtitle mono">BLUEPRINT SANDBOX // 改版沙盤推演原型</div>
+        </div>
+        <div class="bp-lab-toolbar">
+          <span id="bpLabSaveIndicator" class="bp-lab-save-indicator mono">💾 自動存檔</span>
+          <button id="bpLabExportBtn" class="bp-lab-toolbtn bp-lab-toolbtn--primary">📷 匯出乾淨視圖 (.jpg)</button>
+          <button id="bpLabExportJsonBtn" class="bp-lab-toolbtn">💾 匯出設定檔 (.json)</button>
+          <button id="bpLabImportJsonBtn" class="bp-lab-toolbtn">📂 匯入設定檔</button>
+          <input type="file" id="bpLabFileInput" accept=".json" style="display:none;">
+        </div>
+      </header>
+
+      <p class="bp-lab-hint mono">點擊欄位可直接編輯內容｜◀▶ 於同一大階段內調整順序｜✂️ 拆分階段｜🗑️ 刪除階段</p>
+
+      <div class="bp-lab-board-wrap">
+        <div class="bp-lab-board" id="bpLabBoard"></div>
+      </div>
+
+    </div>
+  </div>
+
   <div class="group-panel" id="group-favorites">
     <div class="chart-card">
       <div class="list-header">
@@ -3792,6 +4488,11 @@ function renderHtml(dataset) {
       btn.classList.add('active');
       panel.classList.add('active');
       typeGroupTitle(btn.querySelector('.group-title'));
+      // 按需初始化：第一次切換到 BLUEPRINT LAB 分組時才載入資料並渲染畫布，
+      // initBlueprintLab() 內建 guard，重複呼叫是安全的（不會重複綁定事件）。
+      if (groupName === 'blueprint-lab' && window.initBlueprintLab) {
+        window.initBlueprintLab();
+      }
       return true;
     }
 
@@ -7625,6 +8326,890 @@ function renderHtml(dataset) {
     // ----- 彩蛋5：終端機 Console 徵才／共創「密令」 -----
     console.log('%c🛰️ [SIGNAL INTERCEPTED] 領航少尉 阿葛格 // 私人通訊頻道', 'color: #C6F24E; font-family: monospace; font-size: 14px; font-weight: bold; text-shadow: 0 0 6px rgba(198,242,78,0.5);');
     console.log('%c長官，您發現了艦橋的除錯終端機！這座儀表板由設計師與 AI 協同打造。若您也是痛恨手動貼 Excel、想一起把這套系統接上正式 API 的夥伴，歡迎聯繫阿葛格共創！', 'color: #9aa0ac; font-family: monospace; font-size: 12px; line-height: 1.6;');
+  </script>
+
+  <!-- =====================================================================
+       BLUEPRINT LAB（體驗設計推演畫布）整併模組，來源：blueprint-sandbox.html
+       獨立 IIFE，不與上方主腳本共用變數；按需初始化，見 initBlueprintLab()
+       與下方 activateGroup() 的呼叫點。
+       ===================================================================== -->
+  <script>
+(function () {
+  'use strict';
+
+  var __blueprintLabInitialized = false; // 按需初始化guard：避免切換分組時重複綁定事件
+
+  var STORAGE_KEY = 'bp-lab-data';
+  var BLUEPRINT_SCHEMA_VERSION = 'v3_fdw_row_added';
+
+  var INITIAL_BLUEPRINT_STAGES = [
+    // ===== PHASE 01 // 用車前 =====
+    { phase: "PHASE 01 // 用車前", code: "S01", name: "選擇品牌", channel: "官網/APP", action: "學習使用方式 ➔ 與競品比較差異" },
+    { phase: "PHASE 01 // 用車前", code: "S02", name: "會員註冊", channel: "APP", action: "下載並安裝 App\\n填寫基本資料與手機 OTP\\n上傳身分證與駕照\\n完成信用卡綁定" },
+    { phase: "PHASE 01 // 用車前", code: "S03", name: "審核身份", channel: "APP", action: "審核" },
+    { phase: "PHASE 01 // 用車前", code: "S04", name: "搜尋欲租車輛", channel: "APP", action: "搜尋車輛 ➔ 查看詳情" },
+    { phase: "PHASE 01 // 用車前", code: "S05", name: "預定車輛", channel: "APP", action: "定車 ➔ 預授權費用" },
+    { phase: "PHASE 01 // 用車前", code: "S06", name: "等待取車", channel: "APP", action: "確認租車資訊" },
+    { phase: "PHASE 01 // 用車前", code: "S07", name: "前往取車", channel: "APP", action: "前往取車地點" },
+
+    // ===== PHASE 02 // 用車中 =====
+    { phase: "PHASE 02 // 用車中", code: "S08", name: "取車中", channel: "APP/實體車輛", action: "抵達指定車格\\n外觀環車拍照存證\\n車室清潔檢查\\n開啟 App 藍牙解鎖" },
+    { phase: "PHASE 02 // 用車中", code: "S09", name: "使用中", channel: "APP/實體車輛", action: "發動 ➔ 熟悉車輛 ➔ 離開停車場 ➔ 控制車輛" },
+    { phase: "PHASE 02 // 用車中", code: "S10", name: "準備還車", channel: "APP/實體車輛", action: "找站點與車位 ➔ 抵達停車場 ➔ 即將逾時" },
+
+    // ===== PHASE 03 // 用車後 =====
+    { phase: "PHASE 03 // 用車後", code: "S11", name: "還車", channel: "APP/實體車輛", action: "進入約定停車場\\n熄火並檢查車況\\n上傳內裝整潔與外觀照片\\n確認車格編號並鎖門" },
+    { phase: "PHASE 03 // 用車後", code: "S12", name: "付款", channel: "APP", action: "發票明細 ➔ 選擇付款方式 ➔ 付款完成" },
+    { phase: "PHASE 03 // 用車後", code: "S13", name: "還車後服務", channel: "APP", action: "問卷回饋 ➔ 評價 ➔ 推廣" },
+
+    // ===== SUPPORT // 客服 =====
+    { phase: "SUPPORT // 客服", code: "S14", name: "狀況排除", channel: "APP/電話/Line/Chatbot", action: "發生異常狀況 ➔ 進線客服 ➔ 排除問題" }
+  ];
+
+  var ROW_DEFS = [
+    { row: 3, key: 'action', zh: '行為流程', en: 'User Action', placeholder: '輸入使用者行為...' },
+    { row: 4, key: 'channel', zh: '接觸渠道', en: 'Touchpoint', placeholder: '輸入接觸渠道...' },
+    { row: 5, key: 'frontstage', zh: '前台介面與引導', en: 'Frontstage', placeholder: '輸入前台介面與引導內容...' },
+    { row: 6, key: 'backstage', zh: '後台系統與規則', en: 'Backstage & Logic', placeholder: '輸入後台系統與規則...' }
+  ];
+
+  var NOTES_DEF = { row: 9, key: 'notes', zh: '設計備註', en: 'Design Notes', placeholder: '輸入詳細設計備註、測試紀錄或規格細節...' };
+  var FDW_DEF = { row: 7, zh: '痛點根因', en: 'Failure / Decision / Wait' };
+  var ANNO_DEF = { row: 8, zh: '自訂標註', en: 'Opportunities & Hypotheses' };
+
+  // ===== 橫列標題 ⓘ 說明內容 =====
+  var FLOW_HINT = '點擊儲存格切換至編輯模式，每換一行（Enter）或輸入 ➔ 即代表一個微步驟；失焦後自動編譯為縱向排列的步驟卡片與推進軌道（↓）。';
+
+  var FDW_HINT =
+    '<b style="color:rgb(var(--hud-glow)); display:block; margin-bottom:4px;">痛點根因定性標準</b>' +
+    '• <b style="color:var(--neg);">F（失敗點）</b>：功能故障、閃退或流程斷裂。行動：工程搶修<br>' +
+    '• <b style="color:var(--hypo);">D（決策點）</b>：規則不透明、判定門檻不清。行動：說明文案優化<br>' +
+    '• <b style="color:var(--wait);">W（等待點）</b>：需耗時等待且缺乏進度指示。行動：補足狀態回饋<br>' +
+    '<span style="display:block; margin-top:6px; opacity:0.6; font-size:10px;">* 點擊已建立標籤可修改內容，點 ✕ 刪除</span>';
+
+  var ANNO_HINT =
+    '<b style="color:rgb(var(--hud-glow)); display:block; margin-bottom:4px;">設計推演標籤定義</b>' +
+    '• <b style="color:var(--idea);">💡 機會點（Idea）</b>：可創造體驗亮點、差異化優勢或提升轉換率的設計優化構想<br>' +
+    '• <b style="color:var(--hypo);">❓ 假設（Hypothesis）</b>：尚未經數據驗證、易用性測試或需與工程確認可行性的設計推論<br>' +
+    '<span style="display:block; margin-top:6px; opacity:0.6; font-size:10px;">* 點擊已建立標籤可修改內容，點 ✕ 刪除</span>';
+
+  var ANNO_TYPE_DEFS = {
+    anno: [
+      { type: 'idea', label: '💡 機會點' },
+      { type: 'hypo', label: '❓ 假設' }
+    ],
+    fdw: [
+      { type: 'F', label: '✕ F 失敗風險' },
+      { type: 'D', label: 'D 決策疑慮' },
+      { type: 'W', label: 'W 預期等待' }
+    ]
+  };
+
+  var stages = [];
+  var nextCodeNum = 15;
+  var annoIdCounter = 1;
+  var currentAnnoStageId = null;
+  var currentAnnoType = null;
+  var currentAnnoKind = 'anno'; // 'anno' | 'fdw'
+  var editingAnnoId = null; // 非 null 代表目前是「編輯既有標籤」模式
+  var openCtrlStageId = null;
+
+  function makeId() {
+    return 'st_' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+  }
+
+  function escapeHtml(str) {
+    return String(str == null ? '' : str).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // ===== 行為流程（Row 3）縱向微型流程軌道：解析 ➔ / -> / 換行 為連續步驟 =====
+  function parseFlowSteps(text) {
+    var raw = String(text == null ? '' : text).trim();
+    if (!raw) return [];
+    return raw.split(/➔|->|\\r?\\n/).map(function (s) { return s.trim(); }).filter(function (s) { return s.length > 0; });
+  }
+
+  // 檢視模式：依 stage.action 重繪縱向步驟卡片 + 連接線 + 常駐步驟計數徽章
+  function renderFlowCellView(cell, stageId) {
+    cell.innerHTML = '';
+    cell.classList.remove('bp-lab-flow-editing');
+
+    var stage = stages.filter(function (s) { return s.id === stageId; })[0];
+    var raw = stage ? (stage.action || '') : '';
+    var steps = parseFlowSteps(raw);
+
+    var meta = document.createElement('div');
+    meta.className = 'bp-lab-flow-meta';
+    var badge = document.createElement('span');
+    badge.className = 'bp-lab-flow-badge mono';
+    badge.textContent = steps.length + (steps.length === 1 ? ' STEP' : ' STEPS');
+    meta.appendChild(badge);
+    cell.appendChild(meta);
+
+    var container = document.createElement('div');
+    container.className = 'bp-lab-flow-container';
+
+    if (steps.length === 0) {
+      var empty = document.createElement('div');
+      empty.className = 'bp-lab-flow-empty';
+      empty.textContent = '點擊以新增流程步驟...';
+      container.appendChild(empty);
+    } else {
+      steps.forEach(function (s, i) {
+        var step = document.createElement('div');
+        step.className = 'bp-lab-flow-step';
+
+        var idx = document.createElement('span');
+        idx.className = 'bp-lab-flow-step-idx mono';
+        idx.textContent = String(i + 1).padStart(2, '0');
+
+        var txt = document.createElement('span');
+        txt.className = 'bp-lab-flow-step-text';
+        txt.textContent = s;
+
+        step.appendChild(idx);
+        step.appendChild(txt);
+        container.appendChild(step);
+
+        if (i < steps.length - 1) {
+          var conn = document.createElement('div');
+          conn.className = 'bp-lab-flow-connector';
+          conn.textContent = '↓';
+          container.appendChild(conn);
+        }
+      });
+    }
+
+    cell.appendChild(container);
+  }
+
+  // 編輯模式：切換為多行 textarea，每行代表一個獨立微步驟
+  function switchFlowCellToEdit(cell, stageId) {
+    var stage = stages.filter(function (s) { return s.id === stageId; })[0];
+    var raw = stage ? (stage.action || '') : '';
+    var steps = parseFlowSteps(raw);
+
+    cell.innerHTML = '';
+    cell.classList.add('bp-lab-flow-editing');
+
+    var textarea = document.createElement('textarea');
+    textarea.className = 'bp-lab-flow-textarea mono';
+    textarea.placeholder = '每換一行即代表一個獨立微步驟...';
+    textarea.value = steps.join('\\n');
+    cell.appendChild(textarea);
+
+    textarea.addEventListener('blur', function () {
+      var lines = textarea.value.split(/\\r?\\n/).map(function (l) { return l.trim(); }).filter(function (l) { return l.length > 0; });
+      var newRaw = lines.join('\\n');
+      var st = stages.filter(function (s) { return s.id === stageId; })[0];
+      if (st) {
+        st.action = newRaw;
+        saveState();
+      }
+      renderFlowCellView(cell, stageId);
+    });
+
+    textarea.focus();
+  }
+
+  function buildInitialStages() {
+    return INITIAL_BLUEPRINT_STAGES.map(function (s) {
+      return {
+        id: makeId(),
+        phase: s.phase,
+        code: s.code,
+        name: s.name,
+        channel: s.channel,
+        action: s.action,
+        frontstage: '',
+        backstage: '',
+        annotations: [],
+        fdwAnnotations: [],
+        notes: ''
+      };
+    });
+  }
+
+  function recomputeNextCodeNum() {
+    var max = 14;
+    stages.forEach(function (s) {
+      var m = /S(\d+)/.exec(s.code || '');
+      if (m) max = Math.max(max, parseInt(m[1], 10));
+    });
+    nextCodeNum = max + 1;
+  }
+
+  // 確保每個 stage 物件都具備最新 schema 所需的欄位（相容舊版快取，避免 TypeError）
+  function ensureStageSchema(s) {
+    s.annotations = s.annotations || [];
+    s.fdwAnnotations = s.fdwAnnotations || [];
+    s.notes = s.notes || '';
+    return s;
+  }
+
+  function loadState() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        var loadedStages = null;
+        if (Array.isArray(parsed) && parsed.length) {
+          // 舊版快取格式（純陣列，無 version 包裝）
+          loadedStages = parsed;
+        } else if (parsed && Array.isArray(parsed.stages) && parsed.stages.length) {
+          // 新版快取格式（{ version, stages }）
+          loadedStages = parsed.stages;
+        }
+        if (loadedStages) {
+          stages = loadedStages.map(ensureStageSchema);
+          recomputeNextCodeNum();
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('讀取暫存資料失敗，改用預設範本', e);
+    }
+    stages = buildInitialStages();
+    nextCodeNum = 15;
+  }
+
+  function saveState() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: BLUEPRINT_SCHEMA_VERSION, stages: stages }));
+    } catch (e) {
+      console.warn('自動存檔失敗', e);
+    }
+    var el = document.getElementById('bpLabSaveIndicator');
+    if (el) {
+      var t = new Date();
+      var hh = String(t.getHours()).padStart(2, '0');
+      var mm = String(t.getMinutes()).padStart(2, '0');
+      var ss = String(t.getSeconds()).padStart(2, '0');
+      el.textContent = '💾 已自動存檔 ' + hh + ':' + mm + ':' + ss;
+    }
+  }
+
+  function getPhaseGroups() {
+    var groups = [];
+    stages.forEach(function (s, idx) {
+      var last = groups[groups.length - 1];
+      if (last && last.phase === s.phase) {
+        last.items.push(s);
+        last.endIdx = idx;
+      } else {
+        groups.push({ phase: s.phase, items: [s], startIdx: idx, endIdx: idx });
+      }
+    });
+    return groups;
+  }
+
+  function makeLabelCell(zh, en, hintHtml, hintTitle) {
+    var cell = document.createElement('div');
+    cell.className = 'bp-lab-cell bp-lab-row-label';
+    var hintBtn = hintHtml
+      ? '<button type="button" class="bp-lab-hint-btn" data-action="openInfoModal" title="查看定義說明">ⓘ</button>'
+      : '';
+    cell.innerHTML =
+      '<div class="bp-lab-row-label-zh">' + escapeHtml(zh) + hintBtn + '</div>' +
+      (en ? '<div class="bp-lab-row-label-en mono">' + escapeHtml(en) + '</div>' : '');
+
+    if (hintHtml) {
+      var btn = cell.querySelector('.bp-lab-hint-btn');
+      btn.onclick = function (e) {
+        e.stopPropagation();
+        openBlueprintInfoModal(hintTitle || zh, hintHtml);
+      };
+    }
+    return cell;
+  }
+
+  function render() {
+    var board = document.getElementById('bpLabBoard');
+    board.innerHTML = '';
+
+    var groups = getPhaseGroups();
+    var n = stages.length;
+    var labelW = 110;
+    var colW = 230;
+    board.style.gridTemplateColumns = labelW + 'px repeat(' + n + ', ' + colW + 'px)';
+    board.style.gridTemplateRows = 'auto auto repeat(7, auto)';
+    board.style.width = (labelW + n * colW) + 'px';
+
+    // Row 1: PHASE label + phase group headers
+    var phaseLabelCell = makeLabelCell('PHASE', '');
+    phaseLabelCell.style.gridColumn = '1';
+    phaseLabelCell.style.gridRow = '1';
+    board.appendChild(phaseLabelCell);
+
+    groups.forEach(function (g, gi) {
+      var startCol = g.startIdx + 2;
+      var span = g.items.length;
+      var cell = document.createElement('div');
+      cell.className = 'bp-lab-cell bp-lab-phase-header bp-lab-accent-' + (gi % 2);
+      cell.style.gridColumn = startCol + ' / span ' + span;
+      cell.style.gridRow = '1';
+      cell.innerHTML = '<span class="mono">' + escapeHtml(g.phase) + '</span>';
+      board.appendChild(cell);
+    });
+
+    // Row 2: STAGE label + stage headers
+    var stageLabelCell = makeLabelCell('STAGE', '');
+    stageLabelCell.classList.add('bp-lab-row-label--stage');
+    stageLabelCell.style.gridColumn = '1';
+    stageLabelCell.style.gridRow = '2';
+    board.appendChild(stageLabelCell);
+
+    stages.forEach(function (s, idx) {
+      var col = idx + 2;
+      var group = groups.filter(function (g) { return s.phase === g.phase && idx >= g.startIdx && idx <= g.endIdx; })[0];
+      var localIdx = idx - group.startIdx;
+      var isFirst = localIdx === 0;
+      var isLast = localIdx === group.items.length - 1;
+      var onlyOneInPhase = group.items.length === 1;
+
+      var cell = document.createElement('div');
+      cell.className = 'bp-lab-cell bp-lab-stage-header';
+      cell.dataset.id = s.id;
+      cell.style.gridColumn = String(col);
+      cell.style.gridRow = '2';
+      var isOpen = openCtrlStageId === s.id;
+      cell.innerHTML =
+        '<div class="bp-lab-stage-top">' +
+          '<div>' +
+            '<div class="bp-lab-stage-code mono">' + escapeHtml(s.code) + '</div>' +
+            '<div class="bp-lab-stage-name">' + escapeHtml(s.name) + '</div>' +
+          '</div>' +
+          '<button class="bp-lab-ctrl bp-lab-btn-trigger' + (isOpen ? ' is-active' : '') + '" data-action="toggleCtrl" data-id="' + s.id + '" title="展開/收合操作工具">✏️</button>' +
+        '</div>' +
+        '<div class="bp-lab-stage-ctrls' + (isOpen ? ' is-open' : '') + '">' +
+          '<button class="bp-lab-ctrl bp-lab-btn-shift" data-action="shiftLeft" data-id="' + s.id + '" ' + (isFirst ? 'disabled' : '') + ' title="與左側階段互換順序">◀</button>' +
+          '<button class="bp-lab-ctrl bp-lab-btn-shift" data-action="shiftRight" data-id="' + s.id + '" ' + (isLast ? 'disabled' : '') + ' title="與右側階段互換順序">▶</button>' +
+          '<button class="bp-lab-ctrl bp-lab-btn-split" data-action="split" data-id="' + s.id + '" title="拆分階段">✂️</button>' +
+          '<button class="bp-lab-ctrl bp-lab-btn-delete" data-action="delete" data-id="' + s.id + '" ' + (onlyOneInPhase ? 'disabled' : '') + ' title="刪除階段">🗑️</button>' +
+        '</div>';
+      board.appendChild(cell);
+    });
+
+    // Rows 3-6: editable content rows
+    ROW_DEFS.forEach(function (def) {
+      var labelCell = makeLabelCell(def.zh, def.en, def.key === 'action' ? FLOW_HINT : null, '行為流程 操作引導');
+      labelCell.style.gridColumn = '1';
+      labelCell.style.gridRow = String(def.row);
+      board.appendChild(labelCell);
+
+      var isFlowRow = def.key === 'action';
+
+      stages.forEach(function (s, idx) {
+        var col = idx + 2;
+        var cell = document.createElement('div');
+        cell.className = 'bp-lab-cell bp-lab-content-cell' + (isFlowRow ? ' bp-lab-flow-cell' : '');
+        cell.style.gridColumn = String(col);
+        cell.style.gridRow = String(def.row);
+
+        if (isFlowRow) {
+          // 行為流程：縱向微型流程軌道（點擊整格切換為多行 textarea 編輯）
+          renderFlowCellView(cell, s.id);
+          cell.addEventListener('click', function () {
+            if (cell.classList.contains('bp-lab-flow-editing')) return;
+            switchFlowCellToEdit(cell, s.id);
+          });
+        } else {
+          var inner = document.createElement('div');
+          inner.className = 'bp-lab-editable';
+          inner.contentEditable = 'true';
+          inner.dataset.field = def.key;
+          inner.dataset.id = s.id;
+          inner.dataset.placeholder = def.placeholder;
+          inner.textContent = s[def.key] || '';
+          cell.appendChild(inner);
+        }
+        board.appendChild(cell);
+      });
+    });
+
+    // Row 7: 痛點根因標註（F / D / W）
+    var fdwLabelCell = makeLabelCell(FDW_DEF.zh, FDW_DEF.en, FDW_HINT, '痛點根因 定義標準');
+    fdwLabelCell.style.gridColumn = '1';
+    fdwLabelCell.style.gridRow = String(FDW_DEF.row);
+    board.appendChild(fdwLabelCell);
+
+    stages.forEach(function (s, idx) {
+      var col = idx + 2;
+      var cell = document.createElement('div');
+      cell.className = 'bp-lab-cell bp-lab-anno-cell';
+      cell.style.gridColumn = String(col);
+      cell.style.gridRow = String(FDW_DEF.row);
+
+      var tagsHtml = s.fdwAnnotations.map(function (a) {
+        return (
+          '<span class="bp-lab-tag bp-lab-tag--' + a.type + '" data-action="editFdw" data-id="' + s.id + '" data-anno="' + a.id + '" title="點擊編輯">' +
+            '<span class="bp-lab-tag-icon">' + escapeHtml(a.type) + '</span>' +
+            '<span class="bp-lab-tag-text">' + escapeHtml(a.text) + '</span>' +
+            '<button class="bp-lab-ctrl bp-lab-tag-del" data-action="deleteFdw" data-id="' + s.id + '" data-anno="' + a.id + '" title="刪除標籤">✕</button>' +
+          '</span>'
+        );
+      }).join('');
+
+      cell.innerHTML =
+        '<div class="bp-lab-anno-list">' + tagsHtml + '</div>' +
+        '<button class="bp-lab-ctrl bp-lab-add-anno" data-action="addFdw" data-id="' + s.id + '">+ 新增 F/D/W</button>';
+      board.appendChild(cell);
+    });
+
+    // Row 8: annotations（自訂標註）
+    var annoLabelCell = makeLabelCell(ANNO_DEF.zh, ANNO_DEF.en, ANNO_HINT, '自訂標註 設計推演定義');
+    annoLabelCell.style.gridColumn = '1';
+    annoLabelCell.style.gridRow = String(ANNO_DEF.row);
+    board.appendChild(annoLabelCell);
+
+    stages.forEach(function (s, idx) {
+      var col = idx + 2;
+      var cell = document.createElement('div');
+      cell.className = 'bp-lab-cell bp-lab-anno-cell';
+      cell.style.gridColumn = String(col);
+      cell.style.gridRow = String(ANNO_DEF.row);
+
+      var tagsHtml = s.annotations.map(function (a) {
+        return (
+          '<span class="bp-lab-tag bp-lab-tag--' + a.type + '" data-action="editAnno" data-id="' + s.id + '" data-anno="' + a.id + '" title="點擊編輯">' +
+            '<span class="bp-lab-tag-icon">' + (a.type === 'idea' ? '💡' : '❓') + '</span>' +
+            '<span class="bp-lab-tag-text">' + escapeHtml(a.text) + '</span>' +
+            '<button class="bp-lab-ctrl bp-lab-tag-del" data-action="deleteAnno" data-id="' + s.id + '" data-anno="' + a.id + '" title="刪除標註">✕</button>' +
+          '</span>'
+        );
+      }).join('');
+
+      cell.innerHTML =
+        '<div class="bp-lab-anno-list">' + tagsHtml + '</div>' +
+        '<button class="bp-lab-ctrl bp-lab-add-anno" data-action="addAnno" data-id="' + s.id + '">+ 新增標註</button>';
+      board.appendChild(cell);
+    });
+
+    // Row 9: design notes (below annotations)
+    var notesLabelCell = makeLabelCell(NOTES_DEF.zh, NOTES_DEF.en);
+    notesLabelCell.style.gridColumn = '1';
+    notesLabelCell.style.gridRow = String(NOTES_DEF.row);
+    board.appendChild(notesLabelCell);
+
+    stages.forEach(function (s, idx) {
+      var col = idx + 2;
+      var cell = document.createElement('div');
+      cell.className = 'bp-lab-cell bp-lab-content-cell bp-lab-notes-cell';
+      cell.style.gridColumn = String(col);
+      cell.style.gridRow = String(NOTES_DEF.row);
+
+      var inner = document.createElement('div');
+      inner.className = 'bp-lab-editable bp-lab-editable--notes';
+      inner.contentEditable = 'true';
+      inner.dataset.field = NOTES_DEF.key;
+      inner.dataset.id = s.id;
+      inner.dataset.placeholder = NOTES_DEF.placeholder;
+      inner.textContent = s[NOTES_DEF.key] || '';
+      cell.appendChild(inner);
+      board.appendChild(cell);
+    });
+  }
+
+  function shiftStage(id, dir) {
+    var idx = stages.findIndex(function (s) { return s.id === id; });
+    if (idx < 0) return;
+    var target = idx + dir;
+    if (target < 0 || target >= stages.length) return;
+    if (stages[target].phase !== stages[idx].phase) return;
+    var tmp = stages[idx];
+    stages[idx] = stages[target];
+    stages[target] = tmp;
+    saveState();
+    render();
+  }
+
+  function splitStage(id) {
+    var idx = stages.findIndex(function (s) { return s.id === id; });
+    if (idx < 0) return;
+    var name = window.prompt('請輸入拆分出的新階段名稱：');
+    if (name === null) return;
+    var trimmed = name.trim();
+    if (!trimmed) {
+      alert('階段名稱不可為空白。');
+      return;
+    }
+    var code = 'S' + String(nextCodeNum++).padStart(2, '0');
+    var newStage = {
+      id: makeId(),
+      phase: stages[idx].phase,
+      code: code,
+      name: trimmed,
+      channel: '',
+      action: '',
+      frontstage: '',
+      backstage: '',
+      annotations: [],
+      fdwAnnotations: [],
+      notes: ''
+    };
+    stages.splice(idx + 1, 0, newStage);
+    saveState();
+    render();
+  }
+
+  function deleteStage(id) {
+    var idx = stages.findIndex(function (s) { return s.id === id; });
+    if (idx < 0) return;
+    var phase = stages[idx].phase;
+    var countInPhase = stages.filter(function (s) { return s.phase === phase; }).length;
+    if (countInPhase <= 1) {
+      alert('每個大階段（Phase）至少需保留 1 個階段，無法刪除。');
+      return;
+    }
+    if (!confirm('確定要刪除階段「' + stages[idx].code + ' ' + stages[idx].name + '」嗎？此動作無法復原。')) return;
+    stages.splice(idx, 1);
+    if (openCtrlStageId === id) openCtrlStageId = null;
+    saveState();
+    render();
+  }
+
+  function deleteAnnotation(stageId, annoId, kind) {
+    var stage = stages.filter(function (s) { return s.id === stageId; })[0];
+    if (!stage) return;
+    var key = kind === 'fdw' ? 'fdwAnnotations' : 'annotations';
+    stage[key] = stage[key].filter(function (a) { return a.id !== annoId; });
+    saveState();
+    render();
+  }
+
+  // ===== Annotation / FDW modal（共用同一彈窗元件，依 kind 切換選項） =====
+  function updateAnnoConfirmState() {
+    var text = document.getElementById('bpLabAnnoText').value.trim();
+    document.getElementById('bpLabAnnoConfirm').disabled = !(currentAnnoType && text);
+  }
+
+  function bindAnnoTypeButtons() {
+    var typesContainer = document.getElementById('bpLabAnnoTypes');
+    Array.prototype.forEach.call(typesContainer.querySelectorAll('.bp-lab-type-btn'), function (b) {
+      b.addEventListener('click', function () {
+        currentAnnoType = b.dataset.type;
+        Array.prototype.forEach.call(typesContainer.querySelectorAll('.bp-lab-type-btn'), function (x) {
+          x.classList.remove('is-selected');
+        });
+        b.classList.add('is-selected');
+        updateAnnoConfirmState();
+      });
+    });
+  }
+
+  function openAnnoModal(stageId, kind, annoObj) {
+    currentAnnoStageId = stageId;
+    currentAnnoKind = kind || 'anno';
+    editingAnnoId = annoObj ? annoObj.id : null;
+    currentAnnoType = annoObj ? annoObj.type : null;
+    document.getElementById('bpLabAnnoText').value = annoObj ? annoObj.text : '';
+
+    var isFdw = currentAnnoKind === 'fdw';
+    var isEdit = !!annoObj;
+    document.getElementById('bpLabAnnoModalTitle').textContent = isEdit
+      ? (isFdw ? '編輯痛點根因標註' : '編輯標註')
+      : (isFdw ? '新增痛點根因標註（F / D / W）' : '新增標註');
+
+    var typesContainer = document.getElementById('bpLabAnnoTypes');
+    var defs = ANNO_TYPE_DEFS[currentAnnoKind] || ANNO_TYPE_DEFS.anno;
+    typesContainer.innerHTML = defs.map(function (d) {
+      var selected = annoObj && annoObj.type === d.type ? ' is-selected' : '';
+      return '<button type="button" class="bp-lab-type-btn' + selected + '" data-type="' + d.type + '">' + escapeHtml(d.label) + '</button>';
+    }).join('');
+    bindAnnoTypeButtons();
+
+    document.getElementById('bpLabAnnoConfirm').textContent = isEdit ? '儲存修改' : '新增';
+    updateAnnoConfirmState();
+
+    var modal = document.getElementById('bpLabAnnoModal');
+    modal.hidden = false;
+    document.getElementById('bpLabAnnoText').focus();
+  }
+
+  function closeAnnoModal() {
+    document.getElementById('bpLabAnnoModal').hidden = true;
+    currentAnnoStageId = null;
+    currentAnnoType = null;
+    currentAnnoKind = 'anno';
+    editingAnnoId = null;
+    document.getElementById('bpLabAnnoConfirm').textContent = '新增';
+  }
+
+  // 橫列標題 ⓘ 說明彈窗（body 頂層 modal，見 #bpLabInfoModal）
+  function openBlueprintInfoModal(title, htmlContent) {
+    var modal = document.getElementById('bpLabInfoModal');
+    if (!modal) return;
+    document.getElementById('bpLabInfoModalTitle').textContent = title;
+    document.getElementById('bpLabInfoModalBody').innerHTML = htmlContent;
+    modal.hidden = false;
+  }
+
+  function closeBlueprintInfoModal() {
+    document.getElementById('bpLabInfoModal').hidden = true;
+  }
+
+  // 原本綁定在 DOMContentLoaded 的初始化流程，改為主站按需呼叫的 initBlueprintLab()。
+  // 主站應在使用者「第一次」切換到 BLUEPRINT LAB 分組時呼叫一次 window.initBlueprintLab()；
+  // 此函式本身有 guard（__blueprintLabInitialized），重複呼叫是安全的（第二次呼叫會直接 return）。
+  function initBlueprintLab() {
+    if (__blueprintLabInitialized) return;
+    // 注意：旗標移到函式最後面『成功跑完』才設定，這裡先不設，
+    // 這樣萬一中途真的丟出例外，還能在畫面重新切換分組時再重試一次，
+    // 而不會被一次失敗永久卡死。
+    try {
+
+    document.getElementById('bpLabAnnoText').addEventListener('input', updateAnnoConfirmState);
+    document.getElementById('bpLabAnnoCancel').addEventListener('click', closeAnnoModal);
+
+    document.getElementById('bpLabAnnoConfirm').addEventListener('click', function () {
+      var text = document.getElementById('bpLabAnnoText').value.trim();
+      if (!currentAnnoStageId || !currentAnnoType || !text) return;
+      var stage = stages.filter(function (s) { return s.id === currentAnnoStageId; })[0];
+      if (stage) {
+        var key = currentAnnoKind === 'fdw' ? 'fdwAnnotations' : 'annotations';
+        if (editingAnnoId) {
+          var existing = stage[key].filter(function (a) { return a.id === editingAnnoId; })[0];
+          if (existing) {
+            existing.type = currentAnnoType;
+            existing.text = text;
+          }
+        } else {
+          stage[key].push({
+            id: 'an_' + (annoIdCounter++) + '_' + Date.now().toString(36),
+            type: currentAnnoType,
+            text: text
+          });
+        }
+        saveState();
+      }
+      closeAnnoModal();
+      render();
+    });
+
+    document.getElementById('bpLabAnnoModal').addEventListener('click', function (e) {
+      if (e.target.id === 'bpLabAnnoModal') closeAnnoModal();
+    });
+
+    document.getElementById('bpLabInfoModalClose').addEventListener('click', closeBlueprintInfoModal);
+    document.getElementById('bpLabInfoModal').addEventListener('click', function (e) {
+      if (e.target.id === 'bpLabInfoModal') closeBlueprintInfoModal();
+    });
+
+    // Board click delegation (buttons + 標籤點擊編輯)
+    // 註：橫列標題 ⓘ 說明改用點擊按鈕開啟 body 頂層的 #bpLabInfoModal（見 makeLabelCell /
+    // openBlueprintInfoModal），本身的 onclick 已在 makeLabelCell 內綁定，不需要在此委派處理。
+    document.getElementById('bpLabBoard').addEventListener('click', function (e) {
+      // ✕ 刪除按鈕優先攔截，避免同時觸發標籤本體的編輯開啟
+      var delBtn = e.target.closest('.bp-lab-tag-del');
+      if (delBtn) {
+        e.stopPropagation();
+        var delAction = delBtn.dataset.action;
+        if (delAction === 'deleteAnno') deleteAnnotation(delBtn.dataset.id, delBtn.dataset.anno, 'anno');
+        else if (delAction === 'deleteFdw') deleteAnnotation(delBtn.dataset.id, delBtn.dataset.anno, 'fdw');
+        return;
+      }
+
+      // 點擊標籤本體 → 開啟彈窗進行編輯
+      var tagEl = e.target.closest('.bp-lab-tag');
+      if (tagEl && (tagEl.dataset.action === 'editAnno' || tagEl.dataset.action === 'editFdw')) {
+        var tagKind = tagEl.dataset.action === 'editFdw' ? 'fdw' : 'anno';
+        var tagStageId = tagEl.dataset.id;
+        var tagAnnoId = tagEl.dataset.anno;
+        var tagStage = stages.filter(function (s) { return s.id === tagStageId; })[0];
+        if (tagStage) {
+          var tagArr = tagKind === 'fdw' ? tagStage.fdwAnnotations : tagStage.annotations;
+          var annoObj = tagArr.filter(function (a) { return a.id === tagAnnoId; })[0];
+          if (annoObj) openAnnoModal(tagStageId, tagKind, annoObj);
+        }
+        return;
+      }
+
+      var btn = e.target.closest && e.target.closest('button[data-action]');
+      if (!btn || btn.disabled) return;
+      var action = btn.dataset.action;
+      var id = btn.dataset.id;
+      if (action === 'shiftLeft') shiftStage(id, -1);
+      else if (action === 'shiftRight') shiftStage(id, 1);
+      else if (action === 'split') splitStage(id);
+      else if (action === 'delete') deleteStage(id);
+      else if (action === 'addAnno') openAnnoModal(id, 'anno');
+      else if (action === 'addFdw') openAnnoModal(id, 'fdw');
+      else if (action === 'toggleCtrl') {
+        var header = btn.closest('.bp-lab-stage-header');
+        var ctrls = header.querySelector('.bp-lab-stage-ctrls');
+        var isCurrentlyOpen = ctrls.classList.contains('is-open');
+
+        // 先將所有其他打開的關閉
+        document.querySelectorAll('.bp-lab-stage-ctrls.is-open').forEach(function(el) {
+          el.classList.remove('is-open');
+        });
+        document.querySelectorAll('.bp-lab-btn-trigger.is-active').forEach(function(el) {
+          el.classList.remove('is-active');
+        });
+
+        // 切換當前狀態
+        if (!isCurrentlyOpen) {
+          ctrls.classList.add('is-open');
+          btn.classList.add('is-active');
+          openCtrlStageId = id;
+        } else {
+          openCtrlStageId = null;
+        }
+      }
+    });
+
+    // Board blur delegation (inline edit save) — blur doesn't bubble, use capture
+    // 註：行為流程（action）欄改用獨立的 textarea + 自身 blur 監聽處理，不再經過此處的 contenteditable 邏輯
+    document.getElementById('bpLabBoard').addEventListener('blur', function (e) {
+      var el = e.target;
+      if (el.classList && el.classList.contains('bp-lab-editable')) {
+        var id = el.dataset.id;
+        var field = el.dataset.field;
+        var stage = stages.filter(function (s) { return s.id === id; })[0];
+        if (stage) {
+          stage[field] = el.textContent.trim();
+          saveState();
+        }
+      }
+    }, true);
+
+
+    document.getElementById('bpLabExportBtn').addEventListener('click', function () {
+      var board = document.getElementById('bpLabBoard');
+
+      // 匯出前強制收合所有操作面板，避免截圖拍到 ✏️ 工具列
+      document.querySelectorAll('.bp-lab-stage-ctrls.is-open').forEach(function(el) { el.classList.remove('is-open'); });
+      document.querySelectorAll('.bp-lab-btn-trigger.is-active').forEach(function(el) { el.classList.remove('is-active'); });
+      openCtrlStageId = null;
+
+      // 匯出前強制關閉 ⓘ 說明彈窗（body 頂層 modal，跟畫布本體無關但避免截圖時殘留遮罩）
+      closeBlueprintInfoModal();
+
+      // 匯出前強制結束行為流程的編輯狀態（觸發 textarea 的 blur 存檔並還原為卡片檢視）
+      document.querySelectorAll('.bp-lab-flow-textarea').forEach(function (el) { el.blur(); });
+
+      document.body.classList.add('bp-lab-exporting');
+      setTimeout(function () {
+        html2canvas(board, { backgroundColor: '#0f1115', scale: 2, useCORS: true }).then(function (canvas) {
+          var dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+          var a = document.createElement('a');
+          var ts = new Date();
+          var stamp = ts.getFullYear() + String(ts.getMonth() + 1).padStart(2, '0') + String(ts.getDate()).padStart(2, '0') +
+            '-' + String(ts.getHours()).padStart(2, '0') + String(ts.getMinutes()).padStart(2, '0');
+          a.href = dataUrl;
+          a.download = 'blueprint-sandbox-' + stamp + '.jpg';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        }).catch(function (err) {
+          console.error('匯出圖片失敗', err);
+          alert('匯出圖片失敗，請檢查瀏覽器主控台錯誤訊息。');
+        }).finally(function () {
+          document.body.classList.remove('bp-lab-exporting');
+        });
+      }, 60);
+    });
+
+    // ===== 匯出 / 匯入 JSON 設定檔（跨裝置資料遷移） =====
+    document.getElementById('bpLabExportJsonBtn').addEventListener('click', function () {
+      var json = JSON.stringify(stages, null, 2);
+      var blob = new Blob([json], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var ts = new Date();
+      var stamp = ts.getFullYear() + String(ts.getMonth() + 1).padStart(2, '0') + String(ts.getDate()).padStart(2, '0');
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'blueprint-backup-' + stamp + '.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('bpLabImportJsonBtn').addEventListener('click', function () {
+      document.getElementById('bpLabFileInput').click();
+    });
+
+    document.getElementById('bpLabFileInput').addEventListener('change', function (e) {
+      var file = e.target.files && e.target.files[0];
+      if (!file) return;
+
+      var reader = new FileReader();
+      reader.onload = function (evt) {
+        var parsed;
+        try {
+          parsed = JSON.parse(evt.target.result);
+        } catch (err) {
+          alert('匯入失敗：檔案不是有效的 JSON 格式。');
+          e.target.value = '';
+          return;
+        }
+
+        // 結構檢查：必須是非空陣列
+        if (!Array.isArray(parsed) || parsed.length === 0) {
+          alert('匯入失敗：JSON 內容必須是有效的階段陣列。');
+          e.target.value = '';
+          return;
+        }
+
+        if (!confirm('確定要匯入此設定檔嗎？目前畫布上的所有內容將會被取代，此動作無法復原。')) {
+          e.target.value = '';
+          return;
+        }
+
+        stages = parsed.map(ensureStageSchema);
+        recomputeNextCodeNum();
+        openCtrlStageId = null;
+        saveState();
+        render();
+        e.target.value = '';
+      };
+      reader.onerror = function () {
+        alert('匯入失敗：讀取檔案時發生錯誤。');
+        e.target.value = '';
+      };
+      reader.readAsText(file);
+    });
+
+    // 點擊階段卡頭以外的區域時，自動收合已展開的操作面板
+    document.addEventListener('click', function (e) {
+      if (!e.target.closest('.bp-lab-stage-header')) {
+        document.querySelectorAll('.bp-lab-stage-ctrls.is-open').forEach(function(el) {
+          el.classList.remove('is-open');
+        });
+        document.querySelectorAll('.bp-lab-btn-trigger.is-active').forEach(function(el) {
+          el.classList.remove('is-active');
+        });
+        openCtrlStageId = null;
+      }
+    });
+
+    // Init（首次切換到 BLUEPRINT LAB 分組時才執行，不影響首頁總覽/深度洞察的圖表效能）
+    loadState();
+    render();
+    saveState();
+
+    __blueprintLabInitialized = true; // 只有整段都跑完沒出錯，才真正鎖住，避免重試
+    } catch (err) {
+      console.error('[BLUEPRINT LAB] initBlueprintLab() 執行失敗，畫布可能無法顯示：', err);
+    }
+  }
+
+  window.initBlueprintLab = initBlueprintLab;
+
+  // 防呆：若使用者上次關閉頁面時停在 BLUEPRINT LAB 分組，重新載入時主站的
+  // activateGroup() 還原分頁邏輯可能在『這個 <script> 還沒執行到』之前就先
+  // 呼叫過 window.initBlueprintLab（那時候還不存在，判斷式會被直接跳過，
+  // 之後也不會重試），導致畫布永遠是空的。這裡在模組載入的當下自行檢查一次：
+  // 如果面板已經是 active 狀態，就立刻初始化，不用等下一次點擊分組按鈕。
+  var __bpLabPanel = document.getElementById('group-blueprint-lab');
+  if (__bpLabPanel && __bpLabPanel.classList.contains('active')) {
+    initBlueprintLab();
+  }
+})();
+
   </script>
 </body>
 </html>`;
