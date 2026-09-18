@@ -2099,9 +2099,9 @@
     position: absolute; /* 原為 position: fixed（相對於 body），改為 absolute 並限定在 .bp-lab-app 內，避免疊在整個視窗上 */
     inset: 0;
     background-image:
-      linear-gradient(rgba(var(--hud-grid), 0.05) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(var(--hud-grid), 0.05) 1px, transparent 1px);
-    background-size: 32px 32px;
+      linear-gradient(rgba(var(--hud-grid), 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--hud-grid), 0.025) 1px, transparent 1px);
+    background-size: 20px 20px;
     pointer-events: none;
     z-index: 0;
   }
@@ -2619,6 +2619,19 @@
     gap: 8px;
     margin-bottom: 14px;
   }
+  .bp-lab-modal-type-hint {
+    font-size: 10.5px;
+    line-height: 1.5;
+    color: var(--muted);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-left: 2px solid rgb(var(--hud-glow));
+    border-radius: 4px;
+    padding: 6px 8px;
+    margin-bottom: 12px;
+    min-height: 28px;
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
   .bp-lab-type-btn {
     flex: 1;
     padding: 9px 4px;
@@ -2730,6 +2743,8 @@
     <div class="bp-lab-modal">
       <div class="bp-lab-modal-title mono" id="bpLabAnnoModalTitle">新增標註</div>
       <div class="bp-lab-modal-types" id="bpLabAnnoTypes"></div>
+      <!-- 新增：選項小定義提示區塊 -->
+      <div id="bpLabAnnoTypeHint" class="bp-lab-modal-type-hint mono"></div>
       <textarea id="bpLabAnnoText" placeholder="輸入備註內容..."></textarea>
       <div class="bp-lab-modal-actions">
         <button type="button" id="bpLabAnnoCancel">取消</button>
@@ -7538,6 +7553,26 @@
     ]
   };
 
+  // 標籤選項小定義：openAnnoModal / bindAnnoTypeButtons 切換類型時同步更新 #bpLabAnnoTypeHint
+  var TYPE_DESCRIPTIONS = {
+    'F': '<span style="color:var(--neg);">✕ F 失敗風險</span>：功能故障、閃退或流程中斷，需工程修復。',
+    'D': '<span style="color:var(--hypo);">D 決策疑慮</span>：規則不透明、判定門檻不清，需文案指引優化。',
+    'W': '<span style="color:var(--wait);">W 預期等待</span>：流程需耗時但缺乏進度指示，需補足狀態回饋。',
+    'idea': '<span style="color:var(--idea);">💡 機會點</span>：可創造體驗亮點、差異化優勢或提升轉換率的想法。',
+    'hypo': '<span style="color:var(--hypo);">❓ 假設</span>：尚未經數據驗證、易用性測試或待確認可行性的推論。'
+  };
+
+  function updateAnnoTypeHint(type) {
+    var hintEl = document.getElementById('bpLabAnnoTypeHint');
+    if (!hintEl) return;
+    if (type && TYPE_DESCRIPTIONS[type]) {
+      hintEl.innerHTML = TYPE_DESCRIPTIONS[type];
+      hintEl.style.display = 'block';
+    } else {
+      hintEl.innerHTML = '請點選上方標籤類型以檢視定義';
+    }
+  }
+
   var stages = [];
   var nextCodeNum = 15;
   var annoIdCounter = 1;
@@ -8028,6 +8063,7 @@
         });
         b.classList.add('is-selected');
         updateAnnoConfirmState();
+        updateAnnoTypeHint(currentAnnoType);
       });
     });
   }
@@ -8052,6 +8088,7 @@
       return '<button type="button" class="bp-lab-type-btn' + selected + '" data-type="' + d.type + '">' + escapeHtml(d.label) + '</button>';
     }).join('');
     bindAnnoTypeButtons();
+    updateAnnoTypeHint(currentAnnoType);
 
     document.getElementById('bpLabAnnoConfirm').textContent = isEdit ? '儲存修改' : '新增';
     updateAnnoConfirmState();
